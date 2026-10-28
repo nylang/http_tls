@@ -1,5 +1,5 @@
 name: http_tls
-version: 0.1.0
+version: 0.1.1
 license: MIT
 dependencies:
   net_core:
@@ -10,7 +10,7 @@ dependencies:
     rev: 7b6f9a870e74f32cab625391e8a1395ef872c23e
   http:
     git: https://github.com/nylang/http.git
-    rev: c96b742aac0c7b14bcd6b89d0098ec584085c4b0
+    rev: 4c4470821878c2346ed53f26f6af90d5dcb1f6e6
 directories:
   interface:
     - interface
