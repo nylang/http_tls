@@ -1,0 +1,169 @@
+{
+  "format": "nyra-source-publication-v1",
+  "package": "http_tls",
+  "version": "0.1.1",
+  "source_commit": "883c74312e926caa94a209a60b9d19721c840f0c",
+  "release_url": "https://github.com/nylang/http_tls/releases/tag/v0.1.1",
+  "published_at": "2026-10-28T11:59:15Z",
+  "workflow_run": 40681962834,
+  "workflow_conclusion": "success",
+  "hosts": {
+    "darwin-x86_64": {
+      "profile": "96 core/replays and complete 276 TCP/HTTPS/DNS/upload/redirect scenarios",
+      "source_commits": {
+        "net_core": "e86cf3b732b97ef7198e8e461ecd550c65b2c8cb",
+        "http_tls": "883c74312e926caa94a209a60b9d19721c840f0c",
+        "tls": "7b6f9a870e74f32cab625391e8a1395ef872c23e",
+        "http": "4c4470821878c2346ed53f26f6af90d5dcb1f6e6"
+      },
+      "compiler_sha256": "7bb9f54c70ec2356e6e373adbf79166538838bf59c453585258460daaf103cef"
+    },
+    "linux-x86_64": {
+      "profile": "96 core/replays and complete 276 TCP/HTTPS/DNS/upload/redirect scenarios",
+      "source_commits": {
+        "tls": "7b6f9a870e74f32cab625391e8a1395ef872c23e",
+        "http": "4c4470821878c2346ed53f26f6af90d5dcb1f6e6",
+        "http_tls": "883c74312e926caa94a209a60b9d19721c840f0c",
+        "net_core": "e86cf3b732b97ef7198e8e461ecd550c65b2c8cb"
+      },
+      "compiler_sha256": "72e2d44322047cb6d549db18692ea2c77f3e67ca839cf0c867bcdc503ffe3382"
+    },
+    "windows-x86_64": {
+      "profile": "96 core/replays and complete 276 TCP/HTTPS/DNS/upload/redirect scenarios",
+      "source_commits": {
+        "http": "4c4470821878c2346ed53f26f6af90d5dcb1f6e6",
+        "http_tls": "883c74312e926caa94a209a60b9d19721c840f0c",
+        "net_core": "e86cf3b732b97ef7198e8e461ecd550c65b2c8cb",
+        "tls": "7b6f9a870e74f32cab625391e8a1395ef872c23e"
+      },
+      "compiler_sha256": "430f1095f79864ada1d0a261d08445e04557c0bc22eea0ae91256a564601bfdb"
+    },
+    "darwin-arm64": {
+      "profile": "96 core/replays and complete 276 TCP/HTTPS/DNS/upload/redirect scenarios",
+      "source_commits": {
+        "net_core": "e86cf3b732b97ef7198e8e461ecd550c65b2c8cb",
+        "http_tls": "883c74312e926caa94a209a60b9d19721c840f0c",
+        "tls": "7b6f9a870e74f32cab625391e8a1395ef872c23e",
+        "http": "4c4470821878c2346ed53f26f6af90d5dcb1f6e6"
+      },
+      "compiler_sha256": "5e4696618e0c744eab853c307b57e47f11222e2d36faa8d88b5e6c7f2ab6b335"
+    }
+  },
+  "manifest_policy": "Shipped package.yaml matches the exact tagged manifest byte for byte; immutable public Git edges and no relative rewrites.",
+  "assets": [
+    {
+      "name": "http_tls-0.1.1-source.tar.gz",
+      "digest": "sha256:f334a5be3274e7b42489663f1cb5d0cad37461a366b72975b13bb16eb0d6cc42",
+      "size": 273907,
+      "url": "https://github.com/nylang/http_tls/releases/download/v0.1.1/http_tls-0.1.1-source.tar.gz"
+    },
+    {
+      "name": "release.json",
+      "digest": "sha256:3766b9d2e295da99a0bec2bf498cc210cb6532f17f48a46bcdcab987c265704f",
+      "size": 3314,
+      "url": "https://github.com/nylang/http_tls/releases/download/v0.1.1/release.json"
+    },
+    {
+      "name": "SHA256SUMS",
+      "digest": "sha256:7474132e5db8ca8cc33d7376eb306b832d0312b29154e0ad340d73188e7d599c",
+      "size": 174,
+      "url": "https://github.com/nylang/http_tls/releases/download/v0.1.1/SHA256SUMS"
+    }
+  ],
+  "git_consumer": {
+    "status": "passed",
+    "toolchain": "Source candidate 1.0.4; public SDK 1.0.4 not yet released.",
+    "manager_sha256": "a6a4429f6bf99fbddead10f93b26f181a611feff11b26a552c6111e8c2642bb8",
+    "compiler_sha256": "fa2337a5fbf391fc3dbf79b170e896059cfa9bb17287aceaac16f51996758d61",
+    "runtime_sdk_version": "1.0.3",
+    "source_commits": {
+      "http": "4c4470821878c2346ed53f26f6af90d5dcb1f6e6",
+      "tls": "7b6f9a870e74f32cab625391e8a1395ef872c23e",
+      "net_core": "e86cf3b732b97ef7198e8e461ecd550c65b2c8cb",
+      "http_tls": "883c74312e926caa94a209a60b9d19721c840f0c"
+    },
+    "commands": [
+      {
+        "label": "git-lock",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-native/nyra",
+          "lock",
+          "--no-workspace",
+          "--cache-scope",
+          "local",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer"
+        ]
+      },
+      {
+        "label": "git-fetch-frozen",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-native/nyra",
+          "fetch",
+          "--frozen",
+          "--no-workspace",
+          "--cache-scope",
+          "local",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer"
+        ]
+      },
+      {
+        "label": "git-check",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-release/darwin-arm64/bootstrap/native-generations/stage-1/nyrac",
+          "check",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer/main.ny",
+          "--no-workspace"
+        ]
+      },
+      {
+        "label": "git-offline-moved",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-native/nyra",
+          "fetch",
+          "--offline",
+          "--frozen",
+          "--no-workspace",
+          "--cache-scope",
+          "local",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer-moved"
+        ]
+      },
+      {
+        "label": "git-moved-check",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-release/darwin-arm64/bootstrap/native-generations/stage-1/nyrac",
+          "check",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer-moved/main.ny",
+          "--no-workspace"
+        ]
+      },
+      {
+        "label": "git-build",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/1.0.4-release/darwin-arm64/bootstrap/native-generations/stage-1/nyrac",
+          "build",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-consumer-moved/main.ny",
+          "--no-workspace",
+          "--link",
+          "-O2",
+          "--out-dir",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-objects",
+          "-o",
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-client",
+          "--platform-archive=/Volumes/Work/Workspace/NyraLang/source/bootstrap/sdk/packages/stdlib/targets/darwin-arm64/lib/libnyra_platform.a",
+          "--link-arg=/Volumes/Work/Workspace/NyraLang/cache/https-stream-v2/accepted/base/base/base/base/tls-native/libtls_native.a",
+          "--link-arg=/Volumes/Work/Workspace/NyraLang/cache/package-103/qualification/openssl/openssl-3.5.9/libssl.a",
+          "--link-arg=/Volumes/Work/Workspace/NyraLang/cache/package-103/qualification/openssl/openssl-3.5.9/libcrypto.a",
+          "--link-arg=/Volumes/Work/Workspace/NyraLang/cache/https-stream-v2/accepted/base/base/base/base/core/net-native/libnet_core_native.a",
+          "--link-arg=-lpthread"
+        ]
+      },
+      {
+        "label": "git-run",
+        "command": [
+          "/Volumes/Work/Workspace/NyraLang/cache/http-publication/patch101/git-client"
+        ]
+      }
+    ]
+  }
+}

@@ -278,3 +278,23 @@ records matching public SDK 1.0.2 on macOS arm64, Linux x86_64 and Windows x86_6
 remains pending SSH restoration. The first Linux partial-head fixture failure,
 48 old/new binary comparisons and final complete matrix are recorded separately
 from historical Windows connection timeout investigations. No new package is released.
+
+
+## Published 0.1.1
+
+[http_tls 0.1.1](https://github.com/nylang/http_tls/releases/tag/v0.1.1) is the
+first published adapter source release, pinning the exact HTTP 0.1.1 and TLS
+0.2.0 commits through public Git dependencies. The four native desktop jobs
+and publisher passed: 96 core cases/replays and 276 network/control scenarios
+per host. See [publication](docs/publication-0.1.1.json) and
+[real locked Git consumption](docs/git-consumer-0.1.1.json).
+
+Published package.yaml files and source archives preserve the original Git
+edges without relative dependency rewrites. Corrected source Nyra 1.0.4 tools
+pass online lock/fetch, moved offline resolution, checking, linking and execution;
+SDK 1.0.4 publication remains separate. Native providers/adapters still require
+explicit builds. The earlier two Windows 0.1.0 fixture failures and failed or
+skipped publishing attempts remain historical evidence. The IPv4-only deadline
+fixture now selects IPv4 for cases 12/13; deadlines and production behavior are
+unchanged. Other default-family URL cases remain in the accepted matrix.
+Historical general Windows connection-fault investigations remain open.
