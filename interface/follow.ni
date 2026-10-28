@@ -46,3 +46,29 @@ pub method(HttpFollowClient) TrailerAt(index: int32) -> Result<HttpField, HttpFo
 pub method(HttpFollowClient) Shutdown() -> Result<Unit, HttpFollowError>;
 /** @brief Abort-close once while preserving the first error and hop identity. */
 pub method(HttpFollowClient) Close() -> void;
+
+/** @brief Own a streamed request and lazily follow redirects with explicit producer replay acknowledgement.
+ * @note Plan, limits and continue_wait_ms match URL streaming. No body is buffered for replay.
+ *       Rewrites to empty GET continue without a producer. Preserved nonempty/chunked requests require
+ *       both allow_unsafe_replay and Explicit replay permission, even if an early final sent no payload.
+ *       After an accepted preserved-body redirect, close the old transport, update Url/RedirectCount,
+ *       and emit NeedReplay repeatedly without DNS or connection I/O. Caller rewinds an identical
+ *       payload/trailer producer and calls ReplayBody before Next may open the new hop.
+ *       The original deadline/token includes rewind time. There is no automatic transport retry.
+ */
+pub static method(HttpFollowClient) NewStreaming(url: ref HttpUrl, config: ref TlsClientConfig, verb: ref string, fields: ref <HttpField>[], plan: ref HttpBodyPlan, limits: ref HttpClientLimits, policy: ref HttpRedirectPolicy, replay: HttpBodyReplayPolicy, dial: ref HttpDialOptions, options: ref NetOperationOptions, continue_wait_ms: int32) -> Result<HttpFollowClient, HttpFollowError>;
+/** @brief Retain immutable current-hop metadata, including streamed plan and filtered fields.
+ * @note No producer bytes are retained. Snapshot outlives cursor changes; explicit failure is preserved.
+ */
+pub method(HttpFollowClient) Request() -> Result<HttpRedirectRequest, HttpFollowError>;
+/** @brief Acknowledge one pending NeedReplay after rewinding an identical producer; performs no I/O.
+ * @note Before/after the pending state returns nonterminal InvalidState. Cancellation/expiry retires
+ *       the cursor. Never call merely to retry a transport failure; such failures remain terminal.
+ */
+pub method(HttpFollowClient) ReplayBody() -> Result<Unit, HttpFollowError>;
+/** @brief Active opened streamed producer state; pending replay/unopened/immutable returns InvalidState. */
+pub method(HttpFollowClient) UploadState() -> Result<HttpUploadState, HttpFollowError>;
+/** @brief Supply one bounded owner after NeedBody; pending replay rejects admission without I/O. */
+pub method(HttpFollowClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, HttpFollowError>;
+/** @brief Finish the active streamed producer; terminal shortages/framing failures retire the cursor. */
+pub method(HttpFollowClient) FinishBody(trailers: ref <HttpField>[]) -> Result<Unit, HttpFollowError>;

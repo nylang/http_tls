@@ -1,16 +1,17 @@
 /** @brief Optional TLS adapter for the shared HTTP exchange; no duplicate HTTP grammar. */
 module HttpsClientAdapter;
+part "upload.ny";
 import "stdlib:stdlib.ny";
 import "net_core:net_core.ny";
 import "tls:tls.ny";
 import "http:http.ny";
 import "interface/http_tls.ni";
-struct HttpsData { stream: TlsStream; exchange: HttpClientExchange; options: NetOperationOptions; handshaken: bool; published_complete: bool; failure: HttpsClientError?; }
+struct HttpsData { stream: TlsStream; channel: TlsChannel; streaming: bool; head_flushed: bool; continue_started: bool; continue_wait_ms: int32; continue_deadline: NetDeadline; exchange: HttpClientExchange; options: NetOperationOptions; handshaken: bool; published_complete: bool; failure: HttpsClientError?; }
 pub struct HttpsClient { cell: arc<HttpsData>?; }
 func https_protocol(s: arc<HttpsData>, error: HttpError) -> HttpsClientError { return HttpsClientError{protocol_error: error, stage: s.exchange.Stage(), stats: s.exchange.Stats()}; }
 func https_provider(s: arc<HttpsData>, error: TlsStreamError) -> HttpsClientError { return HttpsClientError{tls_error: error, stage: s.exchange.Stage(), stats: s.exchange.Stats()}; }
 func https_control(error: NetError) -> TlsStreamError { return TlsStreamError{transport_error: error}; }
-func https_fail(state: arc<HttpsData>, error: HttpsClientError) -> HttpsClientError { var s: arc<HttpsData> = state; s.stream.Close(); s.exchange = HttpClientExchange{}; s.failure = error; return error; }
+func https_fail(state: arc<HttpsData>, error: HttpsClientError) -> HttpsClientError { var s: arc<HttpsData> = state; s.stream.Close(); s.channel.Close(); s.exchange = HttpClientExchange{}; s.failure = error; return error; }
 func https_identity(host: ref string, peer: ref string) -> bool {
   let a: Result<IpAddress, NetError> = IpAddress.Parse(host); let b: Result<IpAddress, NetError> = IpAddress.Parse(peer);
   if a.IsOk() || b.IsOk() { return a.IsOk() && b.IsOk() && ((a.get_if<IpAddress>()) as IpAddress).Equals((b.get_if<IpAddress>()) as IpAddress); }
@@ -50,6 +51,7 @@ pub method(HttpsClient) Next() -> Result<HttpClientEvent, HttpsClientError> {
   var s: arc<HttpsData> = self.cell as arc<HttpsData>;
   if s.failure != nil { return s.failure as HttpsClientError; }
   if s.published_complete { return HttpClientEvent{kind: HttpClientEventKind.Complete, complete: true, stats: s.exchange.Stats()}; }
+  if s.streaming { return https_stream_next(s); }
   while true {
     let control: Result<Unit, NetError> = s.options.Check(NetClock.NowNanoseconds());
     if control.IsErr() { return https_fail(s, https_provider(s, https_control((control.get_if<NetError>()) as NetError))); }
@@ -115,6 +117,7 @@ pub method(HttpsClient) Shutdown() -> Result<Unit, HttpsClientError> {
   if self.cell == nil { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.Closed}}; }
   let s: arc<HttpsData> = self.cell as arc<HttpsData>; if s.failure != nil { return s.failure as HttpsClientError; }
   if !s.published_complete { return https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}); }
+  if s.streaming { return https_stream_shutdown(s); }
   let result: Result<TlsTransfer, TlsStreamError> = https_wait(s.stream, s.stream.ShutdownAsync(s.options));
   if result.IsErr() { return https_fail(s, https_provider(s, (result.get_if<TlsStreamError>()) as TlsStreamError)); }
   let transfer: TlsTransfer = (result.get_if<TlsTransfer>()) as TlsTransfer;
@@ -145,9 +148,41 @@ pub static method(HttpsClient) Open(url: ref HttpUrl, config: ref TlsClientConfi
   var settings: TlsClientConfig = config; settings.peer_name = url.Host();
   return HttpsClient.New(connection, settings, wire, body, limits, options);
 }
+/** @brief Validate streamed URL routing and producer policy before dialing. */
+pub static method(HttpsClient) OpenStreaming(url: ref HttpUrl, config: ref TlsClientConfig, verb: ref string, fields: ref <HttpField>[], plan: ref HttpBodyPlan, limits: ref HttpClientLimits, resolver: ref mut AsyncResolver, dial: ref HttpDialOptions, options: ref NetOperationOptions, continue_wait_ms: int32) -> Result<HttpsClient, HttpsClientError> {
+  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds()); if control.IsErr() { return HttpsClientError{tls_error: https_control((control.get_if<NetError>()) as NetError), stage: HttpClientStage.Resolve}; }
+  if !url.IsValid() || !url.IsSecure() { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}}; }
+  if config.peer_name.length != 0 && !https_identity(url.Host(), config.peer_name) { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}}; }
+  if config.alpn.length != 0 && !config.alpn.Equal("http/1.1") { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.Unsupported}}; }
+  if continue_wait_ms < 0 || continue_wait_ms > 60000 { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}}; }
+  let head: Result<NetBuffer, HttpError> = url.StreamingRequestHead(verb, fields, plan);
+  if head.IsErr() { return HttpsClientError{protocol_error: (head.get_if<HttpError>()) as HttpError}; }
+  let wire: NetBuffer = (head.get_if<NetBuffer>()) as NetBuffer;
+  var validated: Result<HttpClientExchange, HttpError> = HttpClientExchange.NewStreaming(wire, limits);
+  if validated.IsErr() { return HttpsClientError{protocol_error: (validated.get_if<HttpError>()) as HttpError}; }
+  validated = HttpError{kind: HttpErrorKind.Closed};
+  var connected: Result<TcpConnection, HttpClientError> = url.Dial(resolver, dial, options);
+  if connected.IsErr() {
+    let error: HttpClientError = (connected.get_if<HttpClientError>()) as HttpClientError;
+    if error.transport_error != nil { return HttpsClientError{tls_error: https_control(error.transport_error as NetError), stage: error.stage, stats: error.stats}; }
+    return HttpsClientError{protocol_error: error.protocol_error, stage: error.stage, stats: error.stats};
+  }
+  var connection: TcpConnection = move((connected.get_if<TcpConnection>()) as TcpConnection);
+  var settings: TlsClientConfig = config; settings.peer_name = url.Host();
+  return HttpsClient.NewStreaming(connection, settings, wire, limits, options, continue_wait_ms);
+}
 /** @brief Compose a validated replay snapshot with the existing URL HTTPS path. */
 pub static method(HttpsClient) OpenRequest(request: ref HttpRedirectRequest, config: ref TlsClientConfig, resolver: ref mut AsyncResolver, dial: ref HttpDialOptions) -> Result<HttpsClient, HttpsClientError> {
+  if request.IsStreaming() { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidState}}; }
   var fields: owned <HttpField>[] = new <HttpField>[request.FieldCount()]; var i: int32 = 0;
   while i < fields.length { fields[i] = (request.FieldAt(i).get_if<HttpField>()) as HttpField; i = i+1; }
   return HttpsClient.Open(request.Url(), config, request.Verb(), fields, request.Body(), request.Limits(), resolver, dial, request.Options());
+}
+
+/** @brief Open a streamed redirect snapshot without manufacturing an empty immutable payload. */
+pub static method(HttpsClient) OpenStreamingRequest(request: ref HttpRedirectRequest, config: ref TlsClientConfig, resolver: ref mut AsyncResolver, dial: ref HttpDialOptions, continue_wait_ms: int32) -> Result<HttpsClient, HttpsClientError> {
+  if !request.IsStreaming() { return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidState}}; }
+  var fields: owned <HttpField>[] = new <HttpField>[request.FieldCount()]; var i: int32 = 0;
+  while i < fields.length { fields[i] = (request.FieldAt(i).get_if<HttpField>()) as HttpField; i = i+1; }
+  return HttpsClient.OpenStreaming(request.Url(), config, request.Verb(), fields, request.UploadPlan(), request.Limits(), resolver, dial, request.Options(), continue_wait_ms);
 }

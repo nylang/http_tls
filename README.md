@@ -157,3 +157,124 @@ For local development, map these package names to editable entries in a common
 `workspace.yaml`. Keep public Git declarations in package manifests; workspace
 registration alone does not add dependency edges. Source publication does not
 create a tagged release or extend historical platform acceptance.
+
+
+## Local development: streamed connected HTTPS
+
+`HttpsClient.NewStreaming(connection, config, head, limits, options, continue_wait_ms)`
+adds a producer-driven connected HTTPS path over the optional `tls.TlsChannel`.
+The existing immutable constructor, URL helpers and redirect clients retain their
+behavior. Plain HTTP imports remain TLS-free; both connected facades share the
+same exchange, parsers, limits, body writer and producer admission rules.
+
+Validate head, peer identity, ALPN, trust configuration and a finite 0..60000 ms
+continue fallback before adopting TCP. Zero TLS BIO capacity selects 65536;
+explicit capacity must be at least 32768. Verified handshake and accepted ALPN
+precede HTTP output. `Next` emits `NeedBody` to request one nonempty immutable
+owner of at most 16 KiB including backing, or `FinishBody(trailers)`. Producer
+time remains inside the original deadline/token, without callbacks or replay.
+
+Buffered/available responses precede further body writes. The continue timer
+starts once after complete head ciphertext flush; only 100 or finite fallback
+releases the gate, while partial heads pause upload. TLS provider retry barriers
+still take precedence: callers never switch operations during a reserved retry.
+Write backpressure otherwise monitors read and write readiness so an early final
+can be decrypted before more queued upload is sent. One iteration owns no
+unreported asynchronous write; actual TLS-accepted plaintext is acknowledged
+before response parsing. TCP delivery may lag that count.
+
+Final responses stop an unfinished producer and revoke unsent plaintext. They do
+not undo bytes already accepted by TLS. The channel may still hold ciphertext
+for an accepted prefix, which abort-close discards without rewriting/replaying
+records. After response completion, `Shutdown` abort-closes a Stopped upload
+rather than flushing it merely to send close_notify. Finished requests use
+bidirectional close_notify under original controls. Completion stays durable
+until explicit Close/Shutdown, and retained heads/body owners outlive the client.
+Authenticated EOF may end a close-delimited HTTP response; raw TLS truncation
+remains a TLS error. An authenticated close before a fixed HTTP body completes
+remains an HTTP UnexpectedEof instead. No error triggers transport retry,
+producer replay or automatic redirects.
+
+
+The [source acceptance](../http/docs/https-upload-acceptance-2026-10-28.json)
+passes on macOS arm64, Linux x86_64 and Windows x86_64 with matching SDK 1.0.2:
+88 core/replay cases, 181 network/control scenarios, 39 TLS/replay cases and 73
+native TLS cases per host. New HTTPS scenarios check constructor rollback,
+producer admission/moves, fixed/chunked/trailer wire, 103/100 and finite fallback,
+early rejection under constrained receive-window pressure, deadline/cancellation
+continuity, authenticated versus raw truncation, untrusted CA before HTTP and
+graceful versus abort shutdown. Intel macOS remains pending authorized SSH recovery.
+The Windows receipt retains an unconfirmed prior TCP redirect-open failure and
+successful unchanged isolated/full retries; that fault investigation stays open.
+That connected-only snapshot predates the URL streaming helpers below. Explicit
+producer replay and automatic redirect integration were added later, as described
+below. No new tagged release is implied.
+
+## Local development: URL streaming
+
+`HttpsClient.OpenStreaming(url, config, verb, fields, plan, limits, resolver,
+dial, options, continue_wait_ms)` opens a streamed request from a strict HTTPS
+URL. It uses `HttpUrl.StreamingRequestHead` and the existing optional TLS channel.
+The URL supplies Host, escaped origin target and certificate/SNI identity. An
+empty config peer name is filled from the URL; a conflicting name or unsupported
+ALPN is rejected before DNS. Request framing, limits and finite continue policy
+are also checked before DNS. CA/provider/channel resources are checked after
+dial and before HTTP output; explicit trust remains mandatory.
+
+The resolver is borrowed only during open; numeric IP URLs bypass it. Next may
+return NeedBody, followed by SupplyBody or FinishBody using bounded owned blocks.
+Resolution, dialing, handshake, continue waiting and producer time consume the
+same original deadline/token. There is no automatic producer replay or redirect.
+Immutable Open/OpenRequest retain their previous behavior. This is unreleased
+local development.
+
+[URL acceptance](../http/docs/url-upload-acceptance-2026-10-28.json) records
+91 core cases/replays and 231 network/control scenarios on each of macOS arm64,
+Linux x86_64 and Windows x86_64 with pinned public SDK 1.0.2. Native Intel remains
+pending SSH restoration. Prior unexplained Windows connection timeouts remain
+open; this candidate passed the complete suite without relaxing test budgets.
+
+## Local development: streamed automatic redirects
+
+`HttpFollowClient.NewStreaming` combines URL streaming with the shared redirect
+chain. Its signature adds an upload plan, `HttpBodyReplayPolicy` and finite
+continue wait to the ordinary follow constructor. The initial request is opened
+lazily by `Next(resolver)`; producer blocks are still bounded and caller-owned.
+The resolver is explicitly borrowed for each hop. TLS strings, dial options,
+limits and the original absolute deadline/shared cancellation are retained.
+
+Drive the cursor as follows:
+
+1. On `NeedBody`, call `SupplyBody` with the next immutable block, or `FinishBody`
+   with final trailers once all payload has drained.
+2. A body-preserving redirect requires both `allow_unsafe_replay` and `Explicit`
+   replay policy. The cursor closes the old connection without draining its
+   response or flushing additional upload data, commits the new URL/hop, then
+   returns `NeedReplay` with zero new-hop progress.
+3. Inspect `Request()` if needed, reset the producer to the beginning of the
+   identical payload/trailers, and call `ReplayBody()`. Only a later `Next` may
+   resolve/connect the target. Repeated `Next` calls before acknowledgement
+   return `NeedReplay` with no DNS or connection work. Body admission while
+   pending replay is nonterminal `InvalidState`; duplicate acknowledgement is
+   likewise rejected without changing the cursor.
+4. Read terminal heads/body/trailers normally. Followed redirect heads/bodies
+   remain suppressed; informational events remain visible. Empty GET rewrites
+   proceed directly without a replay acknowledgement or a new body producer.
+
+`Never` rejects preserved producer replay even if no payload was sent. A caller
+without a repeatable source can still follow a rewrite that drops the body.
+The library does not retain or verify replay payloads: `Explicit` plus
+`ReplayBody` is the caller's attestation, not a transparent rewind callback.
+Producer rewind time consumes the same original control budget; cancellation or
+expiry while paused closes the cursor and preserves target URL/hop identity.
+There is no automatic transport retry, pooling or HTTPS downgrade. Shared field
+filtering remains in force; cross-origin and Connection-nominated streamed
+Trailer promises are rejected rather than silently dropped. Immutable New and
+its existing event behavior remain unchanged.
+
+[Streamed follow acceptance](../http/docs/stream-follow-acceptance-2026-10-28.json)
+records matching public SDK 1.0.2 on macOS arm64, Linux x86_64 and Windows x86_64:
+96 core cases/replays and 276 network/control scenarios per host. Native Intel
+remains pending SSH restoration. The first Linux partial-head fixture failure,
+48 old/new binary comparisons and final complete matrix are recorded separately
+from historical Windows connection timeout investigations. No new package is released.
