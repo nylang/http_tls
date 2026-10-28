@@ -1,0 +1,43 @@
+name: Retry exact tagged Windows qualification
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact already-tagged source commit to qualify without changing it
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  desktop:
+    name: desktop (windows-2022, windows-x86_64)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Verify exact source and run the complete unchanged profile
+        env:
+          HTTP_EXPECTED_SOURCE: ${{ inputs.source_commit }}
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
+          if errorlevel 1 exit /b %errorlevel%
+          python -c "import os,re,subprocess; ref=os.environ['HTTP_EXPECTED_SOURCE']; assert re.fullmatch('[0-9a-f]{40}',ref); assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==ref"
+          if errorlevel 1 exit /b %errorlevel%
+          python -B scripts/ci.py --out-dir "%RUNNER_TEMP%/http_tls-ci"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: acceptance-windows-x86_64
+          path: |
+            ${{ runner.temp }}/http_tls-ci/**/ci-report.json
+            ${{ runner.temp }}/http_tls-ci/**/acceptance.json
+            ${{ runner.temp }}/http_tls-ci/**/*.log
+          if-no-files-found: error
+          retention-days: 14
