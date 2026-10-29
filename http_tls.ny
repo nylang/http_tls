@@ -1,3 +1,6 @@
+// Copyright (c) 2026 tangxiangjiang
+// SPDX-License-Identifier: MIT
+
 /** @brief Optional HTTPS client adapter sharing the http protocol exchange. */
 export "interface/http_tls.ni";
 import "interface/http_tls.ni";

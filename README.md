@@ -298,3 +298,7 @@ skipped publishing attempts remain historical evidence. The IPv4-only deadline
 fixture now selects IPv4 for cases 12/13; deadlines and production behavior are
 unchanged. Other default-family URL cases remain in the accepted matrix.
 Historical general Windows connection-fault investigations remain open.
+
+## Module architecture
+
+See [module responsibilities, ownership and dependency boundaries](ARCHITECTURE.md).

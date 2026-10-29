@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 tangxiangjiang
+# SPDX-License-Identifier: MIT
+
 """Use the immutable HTTP tooling dependency without introducing local package dependencies."""
 from pathlib import Path
 import argparse,re,subprocess,sys
