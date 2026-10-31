@@ -4,13 +4,13 @@ license: MIT
 dependencies:
   net_core:
     git: https://github.com/nylang/netcore.git
-    rev: 8128b144a321a820358256ff79b2441f06a3d8ee
+    rev: 8b7e6a06bf0cfcc772d952cd5a82f4321981edd2
   tls:
     git: https://github.com/nylang/tls.git
-    rev: a5a716bea73313010fcbbb252ce106760961bba5
+    rev: d8a70247fefb303738d082b9461a9a23b50ce67b
   http:
     git: https://github.com/nylang/http.git
-    rev: f11310c16894522122eaff5c7cd6c4fc494645cb
+    rev: 6eeb23ed00615a3823d67f3f33f21e55387075a1
 directories:
   interface:
     - interface
