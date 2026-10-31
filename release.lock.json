@@ -25,6 +25,6 @@
   "git_consumer_tools": "1.0.5",
   "ci_tooling": {
     "url": "https://github.com/nylang/http.git",
-    "commit": "2d27232f26e54e241da8fcd010a43d70fc383b98"
+    "commit": "a3b6cb59203bd7924d3ef9bd9a46a1422b74f58a"
   }
 }
