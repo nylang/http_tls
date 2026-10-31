@@ -1,18 +1,19 @@
 name: http_tls
-version: 0.1.1
+version: 0.2.0
 license: MIT
 dependencies:
   net_core:
     git: https://github.com/nylang/netcore.git
-    rev: e86cf3b732b97ef7198e8e461ecd550c65b2c8cb
+    rev: 8128b144a321a820358256ff79b2441f06a3d8ee
   tls:
     git: https://github.com/nylang/tls.git
-    rev: 7b6f9a870e74f32cab625391e8a1395ef872c23e
+    rev: a5a716bea73313010fcbbb252ce106760961bba5
   http:
     git: https://github.com/nylang/http.git
-    rev: 4c4470821878c2346ed53f26f6af90d5dcb1f6e6
+    rev: f11310c16894522122eaff5c7cd6c4fc494645cb
 directories:
   interface:
     - interface
   private:
     - private
+analysis-options: lint.yaml

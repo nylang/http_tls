@@ -30,31 +30,31 @@ pub struct HttpsClient {
   cell: arc<HttpsData>?;
 }
 
-func https_protocol(s: arc<HttpsData>, error: HttpError) -> HttpsClientError {
-  return HttpsClientError{protocol_error: error, stage: s.exchange.Stage(), stats: s.exchange.Stats()};
+method(HttpsData) ProtocolError(error: HttpError) -> HttpsClientError {
+  return HttpsClientError{protocol_error: error, stage: self.exchange.Stage(), stats: self.exchange.Stats()};
 }
 
-func https_provider(s: arc<HttpsData>, error: TlsStreamError) -> HttpsClientError {
-  return HttpsClientError{tls_error: error, stage: s.exchange.Stage(), stats: s.exchange.Stats()};
+method(HttpsData) ProviderError(error: TlsStreamError) -> HttpsClientError {
+  return HttpsClientError{tls_error: error, stage: self.exchange.Stage(), stats: self.exchange.Stats()};
 }
 
-func https_control(error: NetError) -> TlsStreamError {
-  return TlsStreamError{transport_error: error};
-}
-
-func https_fail(state: arc<HttpsData>, error: HttpsClientError) -> HttpsClientError {
-  var s: arc<HttpsData> = state;
-  s.stream.Close();
-  s.channel.Close();
-  s.exchange = HttpClientExchange{};
-  s.failure = error;
+method(HttpsData) Fail(error: HttpsClientError) -> HttpsClientError {
+  self.stream.Close();
+  self.channel.Close();
+  self.exchange = HttpClientExchange{};
+  self.failure = error;
 
   return error;
 }
 
 // Compare parsed IP addresses by value, but fold only ASCII case for DNS peer names.
-func https_identity(host: ref string, peer: ref string) -> bool {
-  let a: Result<IpAddress, NetError> = IpAddress.Parse(host);
+// Immutable peer expectation. IP normalization is distinct from DNS ASCII folding.
+struct HttpsPeerIdentity {
+  readonly host: string;
+}
+
+method(HttpsPeerIdentity) Matches(peer: ref string) -> bool {
+  let a: Result<IpAddress, NetError> = IpAddress.Parse(self.host);
   let b: Result<IpAddress, NetError> = IpAddress.Parse(peer);
   if a.IsOk() || b.IsOk() {
     return a.IsOk()
@@ -62,34 +62,10 @@ func https_identity(host: ref string, peer: ref string) -> bool {
       && ((a.get_if<IpAddress>()) as IpAddress).Equals((b.get_if<IpAddress>()) as IpAddress);
   }
 
-  if host.length != peer.length {
-    return false;
-  }
-
-  var i: int32 = 0;
-  while i < host.length {
-    var x: int32 = (host[i] as uint8) as int32;
-    var y: int32 = (peer[i] as uint8) as int32;
-    if x >= 65 && x <= 90 {
-      x = x + 32;
-    }
-
-    if y >= 65 && y <= 90 {
-      y = y + 32;
-    }
-
-    if x != y {
-      return false;
-    }
-
-    i = i + 1;
-  }
-
-  return true;
+  return self.host.EqualAsciiIgnoreCase(peer);
 }
 
-func https_wait(
-  stream: ref mut TlsStream,
+method(TlsStream) DriveHttpsTransfer(
   queued: Result<AsyncFuture<TlsTransfer>, TlsStreamError>
 ) -> Result<TlsTransfer, TlsStreamError> {
   if queued.IsErr() {
@@ -100,7 +76,7 @@ func https_wait(
     queued.get_if<AsyncFuture<TlsTransfer>>()
   ) as AsyncFuture<TlsTransfer>;
   while !future.is_completed {
-    let polled: Result<int32, TlsStreamError> = stream.Poll(-1);
+    let polled: Result<int32, TlsStreamError> = self.Poll(-1);
     if polled.IsErr() {
       return (polled.get_if<TlsStreamError>()) as TlsStreamError;
     }
@@ -134,9 +110,9 @@ pub static method(HttpsClient) New(
   limits: ref HttpClientLimits,
   options: ref NetOperationOptions
 ) -> Result<HttpsClient, HttpsClientError> {
-  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds());
+  let control: Result<Unit, NetError> = options.CheckNow();
   if control.IsErr() {
-    return HttpsClientError{tls_error: https_control((control.get_if<NetError>()) as NetError)};
+    return HttpsClientError{tls_error: TlsStreamError{transport_error: (control.get_if<NetError>()) as NetError}};
   }
 
   var core: Result<HttpClientExchange, HttpError> = HttpClientExchange.New(head, body, limits);
@@ -146,7 +122,7 @@ pub static method(HttpsClient) New(
 
   var exchange: HttpClientExchange = move((core.get_if<HttpClientExchange>()) as HttpClientExchange);
   let host: string = (exchange.AuthorityHost().get_if<string>()) as string;
-  if !https_identity(host, config.peer_name) {
+  if !HttpsPeerIdentity{host: host}.Matches(config.peer_name) {
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
@@ -212,37 +188,35 @@ pub method(HttpsClient) Next() -> Result<HttpClientEvent, HttpsClientError> {
   }
 
   if s.streaming {
-    return https_stream_next(s);
+    return (s).NextStreamEvent();
   }
 
   while true {
-    let control: Result<Unit, NetError> = s.options.Check(NetClock.NowNanoseconds());
+    let control: Result<Unit, NetError> = s.options.CheckNow();
     if control.IsErr() {
-      return https_fail(s, https_provider(s, https_control((control.get_if<NetError>()) as NetError)));
+      return (s).Fail((s).ProviderError(TlsStreamError{transport_error: (control.get_if<NetError>()) as NetError}));
     }
 
     if !s.handshaken {
-      let result: Result<TlsTransfer, TlsStreamError> = https_wait(
-        s.stream,
-        s.stream.HandshakeAsync(s.options)
-      );
+      let result: Result<TlsTransfer,
+        TlsStreamError> = (s.stream).DriveHttpsTransfer(s.stream.HandshakeAsync(s.options));
       if result.IsErr() {
-        return https_fail(s, https_provider(s,(result.get_if<TlsStreamError>()) as TlsStreamError));
+        return (s).Fail((s).ProviderError((result.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
       let transfer: TlsTransfer = (result.get_if<TlsTransfer>()) as TlsTransfer;
       if transfer.error != nil {
-        return https_fail(s, https_provider(s, transfer.error as TlsStreamError));
+        return (s).Fail((s).ProviderError(transfer.error as TlsStreamError));
       }
 
       let selected: Result<string, TlsStreamError> = s.stream.SelectedAlpn();
       if selected.IsErr() {
-        return https_fail(s, https_provider(s,(selected.get_if<TlsStreamError>()) as TlsStreamError));
+        return (s).Fail((s).ProviderError((selected.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
       let protocol: string = (selected.get_if<string>()) as string;
       if protocol.length != 0 && !protocol.Equal("http/1.1") {
-        return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.Unsupported}));
+        return (s).Fail((s).ProtocolError(HttpError{kind: HttpErrorKind.Unsupported}));
       }
 
       s.handshaken = true;
@@ -252,38 +226,36 @@ pub method(HttpsClient) Next() -> Result<HttpClientEvent, HttpsClientError> {
     if !s.exchange.RequestComplete() {
       let output: Result<NetBuffer, HttpError> = s.exchange.Output();
       if output.IsErr() {
-        return https_fail(s, https_protocol(s,(output.get_if<HttpError>()) as HttpError));
+        return (s).Fail((s).ProtocolError((output.get_if<HttpError>()) as HttpError));
       }
 
       let block: NetBuffer = (output.get_if<NetBuffer>()) as NetBuffer;
-      if block.Len() == (0 as intptr) {
+      if block.Len() == (0ip) {
         if s.exchange.RequestComplete() {
           continue;
         }
 
-        return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}));
+        return (s).Fail((s).ProtocolError(HttpError{kind: HttpErrorKind.InvalidState}));
       }
 
-      let result: Result<TlsTransfer, TlsStreamError> = https_wait(
-        s.stream,
-        s.stream.WriteAllAsync(block, s.options)
-      );
+      let result: Result<TlsTransfer, TlsStreamError> = (s.stream).DriveHttpsTransfer(s.stream.WriteAllAsync(block,
+        s.options));
       if result.IsErr() {
-        return https_fail(s, https_provider(s,(result.get_if<TlsStreamError>()) as TlsStreamError));
+        return (s).Fail((s).ProviderError((result.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
       let transfer: TlsTransfer = (result.get_if<TlsTransfer>()) as TlsTransfer;
       let acknowledged: Result<Unit, HttpError> = s.exchange.AcknowledgeOutput(transfer.bytes_transferred);
       if acknowledged.IsErr() {
-        return https_fail(s, https_protocol(s,(acknowledged.get_if<HttpError>()) as HttpError));
+        return (s).Fail((s).ProtocolError((acknowledged.get_if<HttpError>()) as HttpError));
       }
 
       if transfer.error != nil {
-        return https_fail(s, https_provider(s, transfer.error as TlsStreamError));
+        return (s).Fail((s).ProviderError(transfer.error as TlsStreamError));
       }
 
       if transfer.bytes_transferred != block.Len() {
-        return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}));
+        return (s).Fail((s).ProtocolError(HttpError{kind: HttpErrorKind.InvalidState}));
       }
 
       continue;
@@ -291,17 +263,15 @@ pub method(HttpsClient) Next() -> Result<HttpClientEvent, HttpsClientError> {
 
     let advanced: Result<HttpClientEvent, HttpError> = s.exchange.NextResponse();
     if advanced.IsErr() {
-      return https_fail(s, https_protocol(s,(advanced.get_if<HttpError>()) as HttpError));
+      return (s).Fail((s).ProtocolError((advanced.get_if<HttpError>()) as HttpError));
     }
 
     let event: HttpClientEvent = (advanced.get_if<HttpClientEvent>()) as HttpClientEvent;
     if event.kind != HttpClientEventKind.NeedInput {
-      let final_control: Result<Unit, NetError> = s.options.Check(NetClock.NowNanoseconds());
+      let final_control: Result<Unit, NetError> = s.options.CheckNow();
       if final_control.IsErr() {
-        return https_fail(
-          s,
-          https_provider(s, https_control((final_control.get_if<NetError>()) as NetError))
-        );
+        let cause: NetError = final_control.get_if<NetError>() as NetError;
+        return s.Fail(s.ProviderError(TlsStreamError{transport_error: cause}));
       }
 
       s.published_complete = event.complete;
@@ -309,32 +279,30 @@ pub method(HttpsClient) Next() -> Result<HttpClientEvent, HttpsClientError> {
       return event;
     }
 
-    let result: Result<TlsTransfer, TlsStreamError> = https_wait(
-      s.stream,
-      s.stream.ReadAsync(16384, s.options)
-    );
+    let result: Result<TlsTransfer, TlsStreamError> = (s.stream).DriveHttpsTransfer(s.stream.ReadAsync(16384,
+      s.options));
     if result.IsErr() {
-      return https_fail(s, https_provider(s,(result.get_if<TlsStreamError>()) as TlsStreamError));
+      return (s).Fail((s).ProviderError((result.get_if<TlsStreamError>()) as TlsStreamError));
     }
 
     let transfer: TlsTransfer = (result.get_if<TlsTransfer>()) as TlsTransfer;
     if transfer.error != nil {
-      var error: HttpsClientError = https_provider(s, transfer.error as TlsStreamError);
+      var error: HttpsClientError = (s).ProviderError(transfer.error as TlsStreamError);
       error.stats.response_bytes_received = error.stats.response_bytes_received + (
         transfer.bytes_transferred as uint64
       );
 
-      return https_fail(s, error);
+      return (s).Fail(error);
     }
 
     if transfer.bytes_transferred != transfer.buffer.Len()
-      || (transfer.bytes_transferred == (0 as intptr) && !transfer.eof) {
-      return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}));
+      || (transfer.bytes_transferred == (0ip) && !transfer.eof) {
+      return (s).Fail((s).ProtocolError(HttpError{kind: HttpErrorKind.InvalidState}));
     }
 
     let received: Result<Unit, HttpError> = s.exchange.Receive(transfer.buffer, transfer.eof);
     if received.IsErr() {
-      return https_fail(s, https_protocol(s,(received.get_if<HttpError>()) as HttpError));
+      return (s).Fail((s).ProtocolError((received.get_if<HttpError>()) as HttpError));
     }
   }
 }
@@ -356,7 +324,7 @@ pub method(HttpsClient) TrailerCount() -> Result<int32, HttpsClientError> {
 
   let result: Result<int32, HttpError> = s.exchange.TrailerCount();
   if result.IsErr() {
-    return https_protocol(s,(result.get_if<HttpError>()) as HttpError);
+    return (s).ProtocolError((result.get_if<HttpError>()) as HttpError);
   }
 
   return (result.get_if<int32>()) as int32;
@@ -379,7 +347,7 @@ pub method(HttpsClient) TrailerAt(index: int32) -> Result<HttpField, HttpsClient
 
   let result: Result<HttpField, HttpError> = s.exchange.TrailerAt(index);
   if result.IsErr() {
-    return https_protocol(s,(result.get_if<HttpError>()) as HttpError);
+    return (s).ProtocolError((result.get_if<HttpError>()) as HttpError);
   }
 
   return (result.get_if<HttpField>()) as HttpField;
@@ -406,21 +374,21 @@ pub method(HttpsClient) Shutdown() -> Result<Unit, HttpsClientError> {
   }
 
   if !s.published_complete {
-    return https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState});
+    return (s).ProtocolError(HttpError{kind: HttpErrorKind.InvalidState});
   }
 
   if s.streaming {
-    return https_stream_shutdown(s);
+    return (s).ShutdownStream();
   }
 
-  let result: Result<TlsTransfer, TlsStreamError> = https_wait(s.stream, s.stream.ShutdownAsync(s.options));
+  let result: Result<TlsTransfer, TlsStreamError> = (s.stream).DriveHttpsTransfer(s.stream.ShutdownAsync(s.options));
   if result.IsErr() {
-    return https_fail(s, https_provider(s,(result.get_if<TlsStreamError>()) as TlsStreamError));
+    return (s).Fail((s).ProviderError((result.get_if<TlsStreamError>()) as TlsStreamError));
   }
 
   let transfer: TlsTransfer = (result.get_if<TlsTransfer>()) as TlsTransfer;
   if transfer.error != nil {
-    return https_fail(s, https_provider(s, transfer.error as TlsStreamError));
+    return (s).Fail((s).ProviderError(transfer.error as TlsStreamError));
   }
 
   self.Close();
@@ -436,7 +404,7 @@ pub method(HttpsClient) Close() -> void {
 
   let s: arc<HttpsData> = self.cell as arc<HttpsData>;
   if s.failure == nil {
-    let ignored: HttpsClientError = https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.Closed}));
+    let ignored: HttpsClientError = (s).Fail((s).ProtocolError(HttpError{kind: HttpErrorKind.Closed}));
   }
 }
 
@@ -461,10 +429,10 @@ pub static method(HttpsClient) Open(
   dial: ref HttpDialOptions,
   options: ref NetOperationOptions
 ) -> Result<HttpsClient, HttpsClientError> {
-  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds());
+  let control: Result<Unit, NetError> = options.CheckNow();
   if control.IsErr() {
     return HttpsClientError{
-      tls_error: https_control((control.get_if<NetError>()) as NetError),
+      tls_error: TlsStreamError{transport_error: (control.get_if<NetError>()) as NetError},
       stage: HttpClientStage.Resolve
     };
   }
@@ -473,7 +441,7 @@ pub static method(HttpsClient) Open(
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
-  if config.peer_name.length != 0 && !https_identity(url.Host(), config.peer_name) {
+  if config.peer_name.length != 0 && !HttpsPeerIdentity{host: url.Host()}.Matches(config.peer_name) {
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
@@ -498,7 +466,7 @@ pub static method(HttpsClient) Open(
     let error: HttpClientError = (connected.get_if<HttpClientError>()) as HttpClientError;
     if error.transport_error != nil {
       return HttpsClientError{
-        tls_error: https_control(error.transport_error as NetError),
+        tls_error: TlsStreamError{transport_error: error.transport_error as NetError},
         stage: error.stage,
         stats: error.stats
       };
@@ -539,10 +507,10 @@ pub static method(HttpsClient) OpenStreaming(
   options: ref NetOperationOptions,
   continue_wait_ms: int32
 ) -> Result<HttpsClient, HttpsClientError> {
-  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds());
+  let control: Result<Unit, NetError> = options.CheckNow();
   if control.IsErr() {
     return HttpsClientError{
-      tls_error: https_control((control.get_if<NetError>()) as NetError),
+      tls_error: TlsStreamError{transport_error: (control.get_if<NetError>()) as NetError},
       stage: HttpClientStage.Resolve
     };
   }
@@ -551,7 +519,7 @@ pub static method(HttpsClient) OpenStreaming(
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
-  if config.peer_name.length != 0 && !https_identity(url.Host(), config.peer_name) {
+  if config.peer_name.length != 0 && !HttpsPeerIdentity{host: url.Host()}.Matches(config.peer_name) {
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
@@ -580,7 +548,7 @@ pub static method(HttpsClient) OpenStreaming(
     let error: HttpClientError = (connected.get_if<HttpClientError>()) as HttpClientError;
     if error.transport_error != nil {
       return HttpsClientError{
-        tls_error: https_control(error.transport_error as NetError),
+        tls_error: TlsStreamError{transport_error: error.transport_error as NetError},
         stage: error.stage,
         stats: error.stats
       };

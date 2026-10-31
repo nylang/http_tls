@@ -39,55 +39,43 @@ pub struct HttpFollowClient {
   cell: arc<FollowData>?;
 }
 
-func follow_http(s: arc<FollowData>, error: HttpClientError) -> HttpFollowError {
-  return HttpFollowError{http_error: error, redirect_count: s.chain.Count(), url: s.request.Url()};
+method(FollowData) HttpError(error: HttpClientError) -> HttpFollowError {
+  return HttpFollowError{http_error: error, redirect_count: self.chain.Count(), url: self.request.Url()};
 }
 
-func follow_https(s: arc<FollowData>, error: HttpsClientError) -> HttpFollowError {
-  return HttpFollowError{https_error: error, redirect_count: s.chain.Count(), url: s.request.Url()};
+method(FollowData) HttpsError(error: HttpsClientError) -> HttpFollowError {
+  return HttpFollowError{https_error: error, redirect_count: self.chain.Count(), url: self.request.Url()};
 }
 
-func follow_protocol(s: arc<FollowData>, kind: HttpErrorKind) -> HttpFollowError {
-  return follow_http(
-    s,
-    HttpClientError{
+method(FollowData) ProtocolError(kind: HttpErrorKind) -> HttpFollowError {
+  return self.HttpError(HttpClientError{
       protocol_error: HttpError{kind: kind},
       stage: HttpClientStage.ResponseHead,
-      stats: s.stats
-    }
-  );
+      stats: self.stats
+    });
 }
 
-func follow_closed() -> HttpFollowError {
+static method(HttpFollowError) Closed() -> HttpFollowError {
   return HttpFollowError{http_error: HttpClientError{protocol_error: HttpError{kind: HttpErrorKind.Closed}}};
 }
 
-func follow_retire(state: arc<FollowData>) -> void {
-  var s: arc<FollowData> = state;
-  s.tcp.Close();
-  s.https.Close();
-  s.tcp = HttpTcpClient{};
-  s.https = HttpsClient{};
-  s.opened = false;
+method(FollowData) Retire() -> void {
+  self.tcp.Close();
+  self.https.Close();
+  self.tcp = HttpTcpClient{};
+  self.https = HttpsClient{};
+  self.opened = false;
 }
 
-func follow_fail(state: arc<FollowData>, error: HttpFollowError) -> HttpFollowError {
-  var s: arc<FollowData> = state;
-  if s.failure != nil {
-    return s.failure as HttpFollowError;
+method(FollowData) Fail(error: HttpFollowError) -> HttpFollowError {
+  if self.failure != nil {
+    return self.failure as HttpFollowError;
   }
 
-  follow_retire(s);
-  s.failure = error;
+  self.Retire();
+  self.failure = error;
 
   return error;
-}
-
-func follow_copy(text: ref string) -> string {
-  var buffer: StringBuffer = StringBuffer.New();
-  buffer.Append(text);
-
-  return buffer.Take();
 }
 
 /**
@@ -132,9 +120,9 @@ pub static method(HttpFollowClient) New(
   }
 
   let settings: TlsClientConfig = TlsClientConfig{
-    peer_name: follow_copy(config.peer_name),
-    ca_file: follow_copy(config.ca_file),
-    alpn: follow_copy(config.alpn),
+    peer_name: (config.peer_name).Substring(0, (config.peer_name).length),
+    ca_file: (config.ca_file).Substring(0, (config.ca_file).length),
+    alpn: (config.alpn).Substring(0, (config.alpn).length),
     ciphertext_capacity: config.ciphertext_capacity
   };
 
@@ -173,7 +161,7 @@ pub static method(HttpFollowClient) NewStreaming(
   options: ref NetOperationOptions,
   continue_wait_ms: int32
 ) -> Result<HttpFollowClient, HttpFollowError> {
-  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds());
+  let control: Result<Unit, NetError> = options.CheckNow();
   if control.IsErr() {
     return HttpFollowError{
       http_error: HttpClientError{transport_error:(control.get_if<NetError>()) as NetError},
@@ -209,9 +197,9 @@ pub static method(HttpFollowClient) NewStreaming(
   }
 
   let settings: TlsClientConfig = TlsClientConfig{
-    peer_name: follow_copy(config.peer_name),
-    ca_file: follow_copy(config.ca_file),
-    alpn: follow_copy(config.alpn),
+    peer_name: (config.peer_name).Substring(0, (config.peer_name).length),
+    ca_file: (config.ca_file).Substring(0, (config.ca_file).length),
+    alpn: (config.alpn).Substring(0, (config.alpn).length),
     ciphertext_capacity: config.ciphertext_capacity
   };
 
@@ -225,28 +213,22 @@ pub static method(HttpFollowClient) NewStreaming(
   }};
 }
 
-func follow_control(state: arc<FollowData>) -> HttpFollowError? {
-  let checked: Result<Unit, NetError> = state.request.Options().Check(NetClock.NowNanoseconds());
+method(FollowData) ControlError() -> HttpFollowError? {
+  let checked: Result<Unit, NetError> = self.request.Options().CheckNow();
   if checked.IsErr() {
-    return follow_fail(
-      state,
-      follow_http(
-        state,
-        HttpClientError{
+    return self.Fail(self.HttpError(HttpClientError{
           transport_error:(checked.get_if<NetError>()) as NetError,
           stage: HttpClientStage.Request
-        }
-      )
-    );
+        }));
   }
 
   return nil;
 }
 
-func follow_has_body(request: ref HttpRedirectRequest) -> bool {
-  let plan: HttpBodyPlan = request.UploadPlan();
+method(HttpRedirectRequest) HasReplayBody() -> bool {
+  let plan: HttpBodyPlan = self.UploadPlan();
 
-  return request.IsStreaming()
+  return self.IsStreaming()
     && (
       plan.kind == HttpBodyKind.Chunked || (plan.kind == HttpBodyKind.ContentLength && plan.length != 0u64)
     );
@@ -286,7 +268,7 @@ pub method(HttpFollowClient) Next(
   resolver: ref mut AsyncResolver
 ) -> Result<HttpClientEvent, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   var s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -300,7 +282,7 @@ pub method(HttpFollowClient) Next(
 
   while true {
     if s.replay_pending {
-      let checked: HttpFollowError? = follow_control(s);
+      let checked: HttpFollowError? = (s).ControlError();
       if checked != nil {
         return checked as HttpFollowError;
       }
@@ -327,7 +309,7 @@ pub method(HttpFollowClient) Next(
         }
 
         if opened.IsErr() {
-          return follow_fail(s, follow_https(s,(opened.get_if<HttpsClientError>()) as HttpsClientError));
+          return (s).Fail((s).HttpsError((opened.get_if<HttpsClientError>()) as HttpsClientError));
         }
 
         s.https = move((opened.get_if<HttpsClient>()) as HttpsClient);
@@ -342,7 +324,7 @@ pub method(HttpFollowClient) Next(
         }
 
         if opened.IsErr() {
-          return follow_fail(s, follow_http(s,(opened.get_if<HttpClientError>()) as HttpClientError));
+          return (s).Fail((s).HttpError((opened.get_if<HttpClientError>()) as HttpClientError));
         }
 
         s.tcp = move((opened.get_if<HttpTcpClient>()) as HttpTcpClient);
@@ -355,14 +337,14 @@ pub method(HttpFollowClient) Next(
     if s.secure {
       let advanced: Result<HttpClientEvent, HttpsClientError> = s.https.Next();
       if advanced.IsErr() {
-        return follow_fail(s, follow_https(s,(advanced.get_if<HttpsClientError>()) as HttpsClientError));
+        return (s).Fail((s).HttpsError((advanced.get_if<HttpsClientError>()) as HttpsClientError));
       }
 
       event = (advanced.get_if<HttpClientEvent>()) as HttpClientEvent;
     } else {
       let advanced: Result<HttpClientEvent, HttpClientError> = s.tcp.Next();
       if advanced.IsErr() {
-        return follow_fail(s, follow_http(s,(advanced.get_if<HttpClientError>()) as HttpClientError));
+        return (s).Fail((s).HttpError((advanced.get_if<HttpClientError>()) as HttpClientError));
       }
 
       event = (advanced.get_if<HttpClientEvent>()) as HttpClientEvent;
@@ -375,19 +357,19 @@ pub method(HttpFollowClient) Next(
         var error: HttpClientError = (decision.get_if<HttpClientError>()) as HttpClientError;
         error.stats = s.stats;
 
-        return follow_fail(s, follow_http(s, error));
+        return (s).Fail((s).HttpError(error));
       }
 
       if (decision.get_if<bool>()) as bool {
-        follow_retire(s);
+        (s).Retire();
         let request: Result<HttpRedirectRequest, HttpClientError> = s.chain.Request();
         if request.IsErr() {
-          return follow_fail(s, follow_http(s,(request.get_if<HttpClientError>()) as HttpClientError));
+          return (s).Fail((s).HttpError((request.get_if<HttpClientError>()) as HttpClientError));
         }
 
         s.request = (request.get_if<HttpRedirectRequest>()) as HttpRedirectRequest;
         s.stats = HttpClientStats{};
-        s.replay_pending = s.streaming && follow_has_body(s.request);
+        s.replay_pending = s.streaming && (s.request).HasReplayBody();
         continue;
       }
     }
@@ -431,7 +413,7 @@ pub method(HttpFollowClient) RedirectCount() -> int32 {
  */
 pub method(HttpFollowClient) TrailerCount() -> Result<int32, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -440,13 +422,13 @@ pub method(HttpFollowClient) TrailerCount() -> Result<int32, HttpFollowError> {
   }
 
   if !s.complete {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<int32, HttpsClientError> = s.https.TrailerCount();
     if result.IsErr() {
-      return follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError);
+      return (s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError);
     }
 
     return (result.get_if<int32>()) as int32;
@@ -454,7 +436,7 @@ pub method(HttpFollowClient) TrailerCount() -> Result<int32, HttpFollowError> {
 
   let result: Result<int32, HttpClientError> = s.tcp.TrailerCount();
   if result.IsErr() {
-    return follow_http(s,(result.get_if<HttpClientError>()) as HttpClientError);
+    return (s).HttpError((result.get_if<HttpClientError>()) as HttpClientError);
   }
 
   return (result.get_if<int32>()) as int32;
@@ -467,7 +449,7 @@ pub method(HttpFollowClient) TrailerCount() -> Result<int32, HttpFollowError> {
  */
 pub method(HttpFollowClient) TrailerAt(index: int32) -> Result<HttpField, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -476,13 +458,13 @@ pub method(HttpFollowClient) TrailerAt(index: int32) -> Result<HttpField, HttpFo
   }
 
   if !s.complete {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<HttpField, HttpsClientError> = s.https.TrailerAt(index);
     if result.IsErr() {
-      return follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError);
+      return (s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError);
     }
 
     return (result.get_if<HttpField>()) as HttpField;
@@ -490,7 +472,7 @@ pub method(HttpFollowClient) TrailerAt(index: int32) -> Result<HttpField, HttpFo
 
   let result: Result<HttpField, HttpClientError> = s.tcp.TrailerAt(index);
   if result.IsErr() {
-    return follow_http(s,(result.get_if<HttpClientError>()) as HttpClientError);
+    return (s).HttpError((result.get_if<HttpClientError>()) as HttpClientError);
   }
 
   return (result.get_if<HttpField>()) as HttpField;
@@ -505,7 +487,7 @@ pub method(HttpFollowClient) TrailerAt(index: int32) -> Result<HttpField, HttpFo
  */
 pub method(HttpFollowClient) Shutdown() -> Result<Unit, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -514,13 +496,13 @@ pub method(HttpFollowClient) Shutdown() -> Result<Unit, HttpFollowError> {
   }
 
   if !s.complete {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<Unit, HttpsClientError> = s.https.Shutdown();
     if result.IsErr() {
-      return follow_fail(s, follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError));
+      return (s).Fail((s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError));
     }
   }
 
@@ -537,7 +519,7 @@ pub method(HttpFollowClient) Close() -> void {
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
   if s.failure == nil {
-    let ignored: HttpFollowError = follow_fail(s, follow_protocol(s, HttpErrorKind.Closed));
+    let ignored: HttpFollowError = (s).Fail((s).ProtocolError(HttpErrorKind.Closed));
   }
 }
 
@@ -550,7 +532,7 @@ pub method(HttpFollowClient) Close() -> void {
  */
 pub method(HttpFollowClient) Request() -> Result<HttpRedirectRequest, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -572,7 +554,7 @@ pub method(HttpFollowClient) Request() -> Result<HttpRedirectRequest, HttpFollow
  */
 pub method(HttpFollowClient) ReplayBody() -> Result<Unit, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   var s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -580,13 +562,13 @@ pub method(HttpFollowClient) ReplayBody() -> Result<Unit, HttpFollowError> {
     return s.failure as HttpFollowError;
   }
 
-  let checked: HttpFollowError? = follow_control(s);
+  let checked: HttpFollowError? = (s).ControlError();
   if checked != nil {
     return checked as HttpFollowError;
   }
 
   if !s.replay_pending {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   s.replay_pending = false;
@@ -602,7 +584,7 @@ pub method(HttpFollowClient) ReplayBody() -> Result<Unit, HttpFollowError> {
  */
 pub method(HttpFollowClient) UploadState() -> Result<HttpUploadState, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -611,13 +593,13 @@ pub method(HttpFollowClient) UploadState() -> Result<HttpUploadState, HttpFollow
   }
 
   if !s.streaming || !s.opened || s.replay_pending {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<HttpUploadState, HttpsClientError> = s.https.UploadState();
     if result.IsErr() {
-      return follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError);
+      return (s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError);
     }
 
     return (result.get_if<HttpUploadState>()) as HttpUploadState;
@@ -625,7 +607,7 @@ pub method(HttpFollowClient) UploadState() -> Result<HttpUploadState, HttpFollow
 
   let result: Result<HttpUploadState, HttpClientError> = s.tcp.UploadState();
   if result.IsErr() {
-    return follow_http(s,(result.get_if<HttpClientError>()) as HttpClientError);
+    return (s).HttpError((result.get_if<HttpClientError>()) as HttpClientError);
   }
 
   return (result.get_if<HttpUploadState>()) as HttpUploadState;
@@ -638,7 +620,7 @@ pub method(HttpFollowClient) UploadState() -> Result<HttpUploadState, HttpFollow
  */
 pub method(HttpFollowClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -646,21 +628,21 @@ pub method(HttpFollowClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, H
     return s.failure as HttpFollowError;
   }
 
-  let checked: HttpFollowError? = follow_control(s);
+  let checked: HttpFollowError? = (s).ControlError();
   if checked != nil {
     return checked as HttpFollowError;
   }
 
   if !s.streaming || !s.opened || s.replay_pending {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<Unit, HttpsClientError> = s.https.SupplyBody(buffer);
     if result.IsErr() {
-      let error: HttpFollowError = follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError);
+      let error: HttpFollowError = (s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError);
       if s.https.UploadState().IsErr() {
-        return follow_fail(s, error);
+        return (s).Fail(error);
       }
 
       return error;
@@ -671,9 +653,9 @@ pub method(HttpFollowClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, H
 
   let result: Result<Unit, HttpClientError> = s.tcp.SupplyBody(buffer);
   if result.IsErr() {
-    let error: HttpFollowError = follow_http(s,(result.get_if<HttpClientError>()) as HttpClientError);
+    let error: HttpFollowError = (s).HttpError((result.get_if<HttpClientError>()) as HttpClientError);
     if s.tcp.UploadState().IsErr() {
-      return follow_fail(s, error);
+      return (s).Fail(error);
     }
 
     return error;
@@ -690,7 +672,7 @@ pub method(HttpFollowClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, H
  */
 pub method(HttpFollowClient) FinishBody(trailers: ref <HttpField>[]) -> Result<Unit, HttpFollowError> {
   if self.cell == nil {
-    return follow_closed();
+    return HttpFollowError.Closed();
   }
 
   let s: arc<FollowData> = self.cell as arc<FollowData>;
@@ -698,21 +680,21 @@ pub method(HttpFollowClient) FinishBody(trailers: ref <HttpField>[]) -> Result<U
     return s.failure as HttpFollowError;
   }
 
-  let checked: HttpFollowError? = follow_control(s);
+  let checked: HttpFollowError? = (s).ControlError();
   if checked != nil {
     return checked as HttpFollowError;
   }
 
   if !s.streaming || !s.opened || s.replay_pending {
-    return follow_protocol(s, HttpErrorKind.InvalidState);
+    return (s).ProtocolError(HttpErrorKind.InvalidState);
   }
 
   if s.secure {
     let result: Result<Unit, HttpsClientError> = s.https.FinishBody(trailers);
     if result.IsErr() {
-      let error: HttpFollowError = follow_https(s,(result.get_if<HttpsClientError>()) as HttpsClientError);
+      let error: HttpFollowError = (s).HttpsError((result.get_if<HttpsClientError>()) as HttpsClientError);
       if s.https.UploadState().IsErr() {
-        return follow_fail(s, error);
+        return (s).Fail(error);
       }
 
       return error;
@@ -723,9 +705,9 @@ pub method(HttpFollowClient) FinishBody(trailers: ref <HttpField>[]) -> Result<U
 
   let result: Result<Unit, HttpClientError> = s.tcp.FinishBody(trailers);
   if result.IsErr() {
-    let error: HttpFollowError = follow_http(s,(result.get_if<HttpClientError>()) as HttpClientError);
+    let error: HttpFollowError = (s).HttpError((result.get_if<HttpClientError>()) as HttpClientError);
     if s.tcp.UploadState().IsErr() {
-      return follow_fail(s, error);
+      return (s).Fail(error);
     }
 
     return error;

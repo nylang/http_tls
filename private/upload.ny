@@ -7,14 +7,14 @@
  */
 part of HttpsClientAdapter;
 
-func https_stream_control(s: arc<HttpsData>) -> HttpsClientError? {
-  if s.failure != nil {
-    return s.failure;
+method(HttpsData) ControlError() -> HttpsClientError? {
+  if self.failure != nil {
+    return self.failure;
   }
 
-  let result: Result<Unit, NetError> = s.options.Check(NetClock.NowNanoseconds());
+  let result: Result<Unit, NetError> = self.options.CheckNow();
   if result.IsErr() {
-    return https_fail(s, https_provider(s, https_control((result.get_if<NetError>()) as NetError)));
+    return self.Fail(self.ProviderError(TlsStreamError{transport_error: (result.get_if<NetError>()) as NetError}));
   }
 
   return nil;
@@ -37,9 +37,9 @@ pub static method(HttpsClient) NewStreaming(
   options: ref NetOperationOptions,
   continue_wait_ms: int32
 ) -> Result<HttpsClient, HttpsClientError> {
-  let control: Result<Unit, NetError> = options.Check(NetClock.NowNanoseconds());
+  let control: Result<Unit, NetError> = options.CheckNow();
   if control.IsErr() {
-    return HttpsClientError{tls_error: https_control((control.get_if<NetError>()) as NetError)};
+    return HttpsClientError{tls_error: TlsStreamError{transport_error: (control.get_if<NetError>()) as NetError}};
   }
 
   if continue_wait_ms<0 || continue_wait_ms>60000 {
@@ -53,7 +53,7 @@ pub static method(HttpsClient) NewStreaming(
 
   var exchange: HttpClientExchange = move((core.get_if<HttpClientExchange>()) as HttpClientExchange);
   let host: string = (exchange.AuthorityHost().get_if<string>()) as string;
-  if !https_identity(host, config.peer_name) {
+  if !HttpsPeerIdentity{host: host}.Matches(config.peer_name) {
     return HttpsClientError{protocol_error: HttpError{kind: HttpErrorKind.InvalidArgument}};
   }
 
@@ -77,87 +77,86 @@ pub static method(HttpsClient) NewStreaming(
   }};
 }
 
-func https_stream_wait(s: arc<HttpsData>, readable: bool, writable: bool, gate: bool) -> HttpsClientError? {
+method(HttpsData) WaitForDirection(readable: bool, writable: bool, gate: bool) -> HttpsClientError? {
   var maximum: int32 = -1;
   if gate {
-    maximum = s.continue_deadline.PollMilliseconds(NetClock.NowNanoseconds());
+    maximum = self.continue_deadline.PollMilliseconds(Instant.Now().ToDurationSinceEpochish().ToNanoseconds());
   }
 
-  let waited: Result<Unit, TlsStreamError> = s.channel.Wait(readable, writable, maximum, s.options);
+  let waited: Result<Unit, TlsStreamError> = self.channel.Wait(readable, writable, maximum, self.options);
   if waited.IsErr() {
-    return https_fail(s, https_provider(s,(waited.get_if<TlsStreamError>()) as TlsStreamError));
+    return self.Fail(self.ProviderError((waited.get_if<TlsStreamError>()) as TlsStreamError));
   }
 
   return nil;
 }
 
 // Read response progress before continuing upload output, while preserving the TLS provider retry barriers.
-func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsClientError> {
-  var s: arc<HttpsData> = state;
+method(HttpsData) NextStreamEvent() -> Result<HttpClientEvent, HttpsClientError> {
   while true {
-    let control: HttpsClientError? = https_stream_control(s);
+    let control: HttpsClientError? = self.ControlError();
     if control != nil {
       return control as HttpsClientError;
     }
 
-    if !s.handshaken {
-      let ready: Result<Unit, TlsStreamError> = s.channel.Handshake(s.options);
+    if !self.handshaken {
+      let ready: Result<Unit, TlsStreamError> = self.channel.Handshake(self.options);
       if ready.IsErr() {
-        return https_fail(s, https_provider(s,(ready.get_if<TlsStreamError>()) as TlsStreamError));
+        return self.Fail(self.ProviderError((ready.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
-      let selected: Result<string, TlsStreamError> = s.channel.SelectedAlpn();
+      let selected: Result<string, TlsStreamError> = self.channel.SelectedAlpn();
       if selected.IsErr() {
-        return https_fail(s, https_provider(s,(selected.get_if<TlsStreamError>()) as TlsStreamError));
+        return self.Fail(self.ProviderError((selected.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
       let value: string = (selected.get_if<string>()) as string;
       if value.length != 0 && !value.Equal("http/1.1") {
-        return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.Unsupported}));
+        return self.Fail(self.ProtocolError(HttpError{kind: HttpErrorKind.Unsupported}));
       }
 
-      s.handshaken = true;
+      self.handshaken = true;
       continue;
     }
 
-    let queried: Result<HttpUploadState, HttpError> = s.exchange.UploadState();
+    let queried: Result<HttpUploadState, HttpError> = self.exchange.UploadState();
     if queried.IsErr() {
-      return https_fail(s, https_protocol(s,(queried.get_if<HttpError>()) as HttpError));
+      return self.Fail(self.ProtocolError((queried.get_if<HttpError>()) as HttpError));
     }
 
     var upload: HttpUploadState = (queried.get_if<HttpUploadState>()) as HttpUploadState;
     var provider_write_retry: bool = false;
     if upload != HttpUploadState.SendingHead {
-      let advanced: Result<HttpClientEvent, HttpError> = s.exchange.NextResponse();
+      let advanced: Result<HttpClientEvent, HttpError> = self.exchange.NextResponse();
       if advanced.IsErr() {
-        return https_fail(s, https_protocol(s,(advanced.get_if<HttpError>()) as HttpError));
+        return self.Fail(self.ProtocolError((advanced.get_if<HttpError>()) as HttpError));
       }
 
       let event: HttpClientEvent = (advanced.get_if<HttpClientEvent>()) as HttpClientEvent;
       if event.kind != HttpClientEventKind.NeedInput {
-        let checked: HttpsClientError? = https_stream_control(s);
+        let checked: HttpsClientError? = self.ControlError();
         if checked != nil {
           return checked as HttpsClientError;
         }
 
-        s.published_complete = event.complete;
+        self.published_complete = event.complete;
 
         return event;
       }
 
-      let result: Result<TlsChannelRead, TlsStreamError> = s.channel.ReadAvailable(s.options);
+      let result: Result<TlsChannelRead, TlsStreamError> = self.channel.ReadAvailable(self.options);
       if result.IsErr() {
-        return https_fail(s, https_provider(s,(result.get_if<TlsStreamError>()) as TlsStreamError));
+        return self.Fail(self.ProviderError((result.get_if<TlsStreamError>()) as TlsStreamError));
       }
 
       let read: TlsChannelRead = (result.get_if<TlsChannelRead>()) as TlsChannelRead;
       if read.transfer.error != nil {
-        var failure: HttpsClientError = https_provider(s, read.transfer.error as TlsStreamError);
+        var failure: HttpsClientError = self.ProviderError(read.transfer.error as TlsStreamError);
         failure.stats.response_bytes_received = failure.stats.response_bytes_received + (
           read.transfer.bytes_transferred as uint64
         );
 
-        return https_fail(s, failure);
+        return self.Fail(failure);
       }
 
       if read.state == TlsChannelReadState.Again {
@@ -166,20 +165,20 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
 
       if read.state == TlsChannelReadState.Ready {
         if read.transfer.bytes_transferred != read.transfer.buffer.Len()
-          || (read.transfer.bytes_transferred == (0 as intptr) && !read.transfer.eof) {
-          return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}));
+          || (read.transfer.bytes_transferred == (0ip) && !read.transfer.eof) {
+          return self.Fail(self.ProtocolError(HttpError{kind: HttpErrorKind.InvalidState}));
         }
 
-        let received: Result<Unit, HttpError> = s.exchange.Receive(read.transfer.buffer, read.transfer.eof);
+        let received: Result<Unit, HttpError> = self.exchange.Receive(read.transfer.buffer, read.transfer.eof);
         if received.IsErr() {
-          return https_fail(s, https_protocol(s,(received.get_if<HttpError>()) as HttpError));
+          return self.Fail(self.ProtocolError((received.get_if<HttpError>()) as HttpError));
         }
 
         continue;
       }
 
       if read.state == TlsChannelReadState.NeedWrite {
-        let waited: HttpsClientError? = https_stream_wait(s, false, true, false);
+        let waited: HttpsClientError? = self.WaitForDirection(false, true, false);
         if waited != nil {
           return waited as HttpsClientError;
         }
@@ -188,10 +187,10 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
       }
 
       provider_write_retry = read.state == TlsChannelReadState.RetryWrite;
-      upload = (s.exchange.UploadState().get_if<HttpUploadState>()) as HttpUploadState;
+      upload = (self.exchange.UploadState().get_if<HttpUploadState>()) as HttpUploadState;
       if read.state != TlsChannelReadState.RetryWrite {
         if upload == HttpUploadState.ReadingResponse || upload == HttpUploadState.Stopped {
-          let waited: HttpsClientError? = https_stream_wait(s, true, false, false);
+          let waited: HttpsClientError? = self.WaitForDirection(true, false, false);
           if waited != nil {
             return waited as HttpsClientError;
           }
@@ -202,13 +201,13 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
         // Flush a previously accepted block before asking for more producer data
         // or waiting for a response. Always probe responses again after blocking.
         if upload != HttpUploadState.SendingBody {
-          let flushed: Result<bool, TlsStreamError> = s.channel.Flush(s.options);
+          let flushed: Result<bool, TlsStreamError> = self.channel.Flush(self.options);
           if flushed.IsErr() {
-            return https_fail(s, https_provider(s,(flushed.get_if<TlsStreamError>()) as TlsStreamError));
+            return self.Fail(self.ProviderError((flushed.get_if<TlsStreamError>()) as TlsStreamError));
           }
 
           if ! ((flushed.get_if<bool>()) as bool) {
-            let waited: HttpsClientError? = https_stream_wait(s, true, true, false);
+            let waited: HttpsClientError? = self.WaitForDirection(true, true, false);
             if waited != nil {
               return waited as HttpsClientError;
             }
@@ -216,28 +215,28 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
             continue;
           }
 
-          s.head_flushed = true;
+          self.head_flushed = true;
         }
 
-        if !s.continue_started && s.head_flushed {
-          s.continue_started = true;
-          s.continue_deadline = NetDeadline.After(
-            NetClock.NowNanoseconds(),
-            (s.continue_wait_ms as uint64) * 1000000u64
+        if !self.continue_started && self.head_flushed {
+          self.continue_started = true;
+          self.continue_deadline = NetDeadline.After(
+            Instant.Now().ToDurationSinceEpochish().ToNanoseconds(),
+            (self.continue_wait_ms as uint64) * 1000000u64
           );
         }
 
         if upload == HttpUploadState.WaitingContinue {
-          if s.continue_deadline.IsExpired(NetClock.NowNanoseconds()) {
-            let released: Result<Unit, HttpError> = s.exchange.ContinueUpload();
+          if self.continue_deadline.IsExpired(Instant.Now().ToDurationSinceEpochish().ToNanoseconds()) {
+            let released: Result<Unit, HttpError> = self.exchange.ContinueUpload();
             if released.IsErr() {
-              return https_fail(s, https_protocol(s,(released.get_if<HttpError>()) as HttpError));
+              return self.Fail(self.ProtocolError((released.get_if<HttpError>()) as HttpError));
             }
 
             continue;
           }
 
-          let waited: HttpsClientError? = https_stream_wait(s, true, false, true);
+          let waited: HttpsClientError? = self.WaitForDirection(true, false, true);
           if waited != nil {
             return waited as HttpsClientError;
           }
@@ -246,16 +245,16 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
         }
 
         if upload == HttpUploadState.NeedBody {
-          let checked: HttpsClientError? = https_stream_control(s);
+          let checked: HttpsClientError? = self.ControlError();
           if checked != nil {
             return checked as HttpsClientError;
           }
 
-          return HttpClientEvent{kind: HttpClientEventKind.NeedBody, stats: s.exchange.Stats()};
+          return HttpClientEvent{kind: HttpClientEventKind.NeedBody, stats: self.exchange.Stats()};
         }
 
         if upload == HttpUploadState.Finished {
-          let waited: HttpsClientError? = https_stream_wait(s, true, false, false);
+          let waited: HttpsClientError? = self.WaitForDirection(true, false, false);
           if waited != nil {
             return waited as HttpsClientError;
           }
@@ -265,39 +264,39 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
       }
     }
 
-    let output: Result<NetBuffer, HttpError> = s.exchange.Output();
+    let output: Result<NetBuffer, HttpError> = self.exchange.Output();
     if output.IsErr() {
-      return https_fail(s, https_protocol(s,(output.get_if<HttpError>()) as HttpError));
+      return self.Fail(self.ProtocolError((output.get_if<HttpError>()) as HttpError));
     }
 
     let block: NetBuffer = (output.get_if<NetBuffer>()) as NetBuffer;
-    if block.Len() == (0 as intptr) {
-      let next: HttpUploadState = (s.exchange.UploadState().get_if<HttpUploadState>()) as HttpUploadState;
+    if block.Len() == (0ip) {
+      let next: HttpUploadState = (self.exchange.UploadState().get_if<HttpUploadState>()) as HttpUploadState;
       if next != upload {
         continue;
       }
 
-      return https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.InvalidState}));
+      return self.Fail(self.ProtocolError(HttpError{kind: HttpErrorKind.InvalidState}));
     }
 
-    let sent: Result<TlsChannelWrite, TlsStreamError> = s.channel.WriteAvailable(block, s.options);
+    let sent: Result<TlsChannelWrite, TlsStreamError> = self.channel.WriteAvailable(block, self.options);
     if sent.IsErr() {
-      return https_fail(s, https_provider(s,(sent.get_if<TlsStreamError>()) as TlsStreamError));
+      return self.Fail(self.ProviderError((sent.get_if<TlsStreamError>()) as TlsStreamError));
     }
 
     let write: TlsChannelWrite = (sent.get_if<TlsChannelWrite>()) as TlsChannelWrite;
-    let acknowledged: Result<Unit, HttpError> = s.exchange.AcknowledgeOutput(
+    let acknowledged: Result<Unit, HttpError> = self.exchange.AcknowledgeOutput(
       write.transfer.bytes_transferred
     );
     if acknowledged.IsErr() {
-      return https_fail(s, https_protocol(s,(acknowledged.get_if<HttpError>()) as HttpError));
+      return self.Fail(self.ProtocolError((acknowledged.get_if<HttpError>()) as HttpError));
     }
 
     if write.transfer.error != nil {
-      return https_fail(s, https_provider(s, write.transfer.error as TlsStreamError));
+      return self.Fail(self.ProviderError(write.transfer.error as TlsStreamError));
     }
 
-    if write.transfer.bytes_transferred>(0 as intptr) {
+    if write.transfer.bytes_transferred>(0ip) {
       continue;
     }
 
@@ -305,13 +304,10 @@ func https_stream_next(state: arc<HttpsData>) -> Result<HttpClientEvent, HttpsCl
       continue;
     }
 
-    let waited: HttpsClientError? = https_stream_wait(
-      s,
-      write.state == TlsChannelWriteState.NeedRead
+    let waited: HttpsClientError? = self.WaitForDirection(write.state == TlsChannelWriteState.NeedRead
         || (upload != HttpUploadState.SendingHead && !provider_write_retry),
       write.state != TlsChannelWriteState.NeedRead,
-      false
-    );
+      false);
     if waited != nil {
       return waited as HttpsClientError;
     }
@@ -337,7 +333,7 @@ pub method(HttpsClient) UploadState() -> Result<HttpUploadState, HttpsClientErro
 
   let result: Result<HttpUploadState, HttpError> = s.exchange.UploadState();
   if result.IsErr() {
-    return https_protocol(s,(result.get_if<HttpError>()) as HttpError);
+    return (s).ProtocolError((result.get_if<HttpError>()) as HttpError);
   }
 
   return (result.get_if<HttpUploadState>()) as HttpUploadState;
@@ -355,14 +351,14 @@ pub method(HttpsClient) SupplyBody(buffer: ref NetBuffer) -> Result<Unit, HttpsC
   }
 
   let s: arc<HttpsData> = self.cell as arc<HttpsData>;
-  let control: HttpsClientError? = https_stream_control(s);
+  let control: HttpsClientError? = (s).ControlError();
   if control != nil {
     return control as HttpsClientError;
   }
 
   let result: Result<Unit, HttpError> = s.exchange.SupplyBody(buffer);
   if result.IsErr() {
-    return https_protocol(s,(result.get_if<HttpError>()) as HttpError);
+    return (s).ProtocolError((result.get_if<HttpError>()) as HttpError);
   }
 
   return Unit{};
@@ -380,16 +376,16 @@ pub method(HttpsClient) FinishBody(trailers: ref <HttpField>[]) -> Result<Unit, 
   }
 
   let s: arc<HttpsData> = self.cell as arc<HttpsData>;
-  let control: HttpsClientError? = https_stream_control(s);
+  let control: HttpsClientError? = (s).ControlError();
   if control != nil {
     return control as HttpsClientError;
   }
 
   let result: Result<Unit, HttpError> = s.exchange.FinishBody(trailers);
   if result.IsErr() {
-    let error: HttpsClientError = https_protocol(s,(result.get_if<HttpError>()) as HttpError);
+    let error: HttpsClientError = (s).ProtocolError((result.get_if<HttpError>()) as HttpError);
     if s.streaming && s.exchange.UploadState().IsErr() {
-      return https_fail(s, error);
+      return (s).Fail(error);
     }
 
     return error;
@@ -399,41 +395,41 @@ pub method(HttpsClient) FinishBody(trailers: ref <HttpField>[]) -> Result<Unit, 
 }
 
 // Stop an unfinished streamed upload without flushing its remaining plaintext as part of graceful shutdown.
-func https_stream_shutdown(s: arc<HttpsData>) -> Result<Unit, HttpsClientError> {
-  let state: Result<HttpUploadState, HttpError> = s.exchange.UploadState();
+method(HttpsData) ShutdownStream() -> Result<Unit, HttpsClientError> {
+  let state: Result<HttpUploadState, HttpError> = self.exchange.UploadState();
   if state.IsErr() {
-    return https_fail(s, https_protocol(s,(state.get_if<HttpError>()) as HttpError));
+    return self.Fail(self.ProtocolError((state.get_if<HttpError>()) as HttpError));
   }
 
   // Never flush accepted-but-unsent upload records solely to send close_notify.
   if ((state.get_if<HttpUploadState>()) as HttpUploadState) == HttpUploadState.Stopped {
-    let ignored: HttpsClientError = https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.Closed}));
+    let ignored: HttpsClientError = self.Fail(self.ProtocolError(HttpError{kind: HttpErrorKind.Closed}));
 
     return Unit{};
   }
 
   while true {
-    let flushed: Result<bool, TlsStreamError> = s.channel.Flush(s.options);
+    let flushed: Result<bool, TlsStreamError> = self.channel.Flush(self.options);
     if flushed.IsErr() {
-      return https_fail(s, https_provider(s,(flushed.get_if<TlsStreamError>()) as TlsStreamError));
+      return self.Fail(self.ProviderError((flushed.get_if<TlsStreamError>()) as TlsStreamError));
     }
 
     if (flushed.get_if<bool>()) as bool {
       break;
     }
 
-    let waited: HttpsClientError? = https_stream_wait(s, false, true, false);
+    let waited: HttpsClientError? = self.WaitForDirection(false, true, false);
     if waited != nil {
       return waited as HttpsClientError;
     }
   }
 
-  let closed: Result<Unit, TlsStreamError> = s.channel.Shutdown(s.options);
+  let closed: Result<Unit, TlsStreamError> = self.channel.Shutdown(self.options);
   if closed.IsErr() {
-    return https_fail(s, https_provider(s,(closed.get_if<TlsStreamError>()) as TlsStreamError));
+    return self.Fail(self.ProviderError((closed.get_if<TlsStreamError>()) as TlsStreamError));
   }
 
-  let retired: HttpsClientError = https_fail(s, https_protocol(s, HttpError{kind: HttpErrorKind.Closed}));
+  let retired: HttpsClientError = self.Fail(self.ProtocolError(HttpError{kind: HttpErrorKind.Closed}));
 
   return Unit{};
 }

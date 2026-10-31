@@ -18,3 +18,8 @@ TLS, body producer time and replay. The connected adapter never calls the cursor
 Buffered and streamed scheduling stay parts of one adapter owner, rather than
 becoming two modules sharing a public mutable state record. Existing HTTP/HTTPS
 consumer acceptance scenarios exercise both boundaries.
+
+HttpsData and FollowData operations borrow their retained resource owners.
+HttpsPeerIdentity retains the expected host; parsed IP equality and ASCII-only DNS
+comparison are distinct policies. TlsStream.DriveHttpsTransfer drives bounded
+Future progress without moving HTTP policy into the TLS provider.

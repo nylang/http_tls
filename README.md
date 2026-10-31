@@ -1,5 +1,8 @@
 # http_tls
 
+Development API 0.2.0 requires a matching Nyra SDK 1.0.5 or newer.
+Rebuild precompiled consumers against the matching interfaces and runtime.
+
 Optional MIT-licensed connected HTTPS adapter for Nyra. Import
 `http_tls:http_tls.ny` together with the public http, tls and net_core barrels.
 This package owns no HTTP grammar or crypto implementation. It composes
@@ -302,3 +305,12 @@ Historical general Windows connection-fault investigations remain open.
 ## Module architecture
 
 See [module responsibilities, ownership and dependency boundaries](ARCHITECTURE.md).
+
+## Coding-rule lint
+
+`package.yaml` selects the portable `lint.yaml` profile. It requires the
+1.0.5 P7 analyzer candidate (or a later SDK containing those rules); the
+published 1.0.4 analyzer does not implement them. `import: default` inherits
+the selected workspace profile when present, otherwise analyzer SDK defaults.
+No sibling source path is required. Run `nyra-analyzer lint . --json`. Existing
+violations remain migration debt; lint success is not runtime qualification.
