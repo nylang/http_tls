@@ -22,5 +22,9 @@
       }
     }
   },
-  "git_consumer_tools": "1.0.5 (qualification pins pending; publication is separate)"
+  "git_consumer_tools": "1.0.5",
+  "ci_tooling": {
+    "url": "https://github.com/nylang/http.git",
+    "commit": "5b19705f221a7a9b4698817bf769aa320b346dd4"
+  }
 }
