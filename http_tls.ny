@@ -8,3 +8,6 @@ import "private/http_tls.ny";
 export "interface/follow.ni";
 import "interface/follow.ni";
 import "private/follow.ny";
+
+export "interface/websocket_tls.ni";
+import "private/websocket_tls.ny";

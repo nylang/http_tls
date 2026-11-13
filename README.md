@@ -312,3 +312,13 @@ published 1.0.4 analyzer does not implement them. `import: default` inherits
 the selected workspace profile when present, otherwise analyzer SDK defaults.
 No sibling source path is required. Run `nyra-analyzer lint . --json`. Lint checks
 coding rules; runtime qualification is a separate gate.
+
+## Secure WebSocket client
+
+Import `http:http.ny` and `http_tls:http_tls.ny`, then use
+`WebSocket.OpenSecure(url, ca_file, resolver, dial, limits, options)` for a
+`wss://` URL. The PEM trust file is required. The existing TLS client verifies
+the certificate against the URL's host or IP address and negotiates
+HTTP/1.1. The original deadline and cancellation span resolution, connection,
+TLS and the HTTP upgrade. After opening, use the shared WebSocket session
+operations with the desired controls for each operation.

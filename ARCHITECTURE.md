@@ -23,3 +23,8 @@ HttpsData and FollowData operations borrow their retained resource owners.
 HttpsPeerIdentity retains the expected host; parsed IP equality and ASCII-only DNS
 comparison are distinct policies. TlsStream.DriveHttpsTransfer drives bounded
 Future progress without moving HTTP policy into the TLS provider.
+
+The secure WebSocket adapter independently owns one TlsStream and drives its
+plaintext transfer Futures. It establishes and verifies TLS before handing
+transport ownership to the WebSocket session in http. HTTP upgrade and frame
+rules remain in http.
