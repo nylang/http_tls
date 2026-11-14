@@ -322,3 +322,13 @@ the certificate against the URL's host or IP address and negotiates
 HTTP/1.1. The original deadline and cancellation span resolution, connection,
 TLS and the HTTP upgrade. After opening, use the shared WebSocket session
 operations with the desired controls for each operation.
+
+## HTTPS over HTTP/2
+
+Import `http:http2.ny` and `http_tls:http2_tls.ny`. Open with
+`Http2Client.OpenSecure(url, ca_file, provider_file, resolver, dial, limits,
+options)`. Supply a PEM trust file and a trusted path to the native HTTP/2
+bridge built using the HTTP package instructions. The URL supplies the
+certificate identity. The handshake must select ALPN `h2` before any
+HTTP/2 bytes are written. Use the regular net_core and TLS link inputs
+and the shared `Submit` and `Receive` operations after open.
