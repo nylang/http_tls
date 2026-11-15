@@ -43,6 +43,12 @@ pub static method(Http2Server) ServeStreamingSecure(
   handler: Http2StreamHandler, limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, Https2ServerError>;
 
+/** @brief Serve full-duplex HTTP/2 after selecting ALPN h2. */
+pub static method(Http2Server) ServeDuplexSecure(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  handler: Http2DuplexHandler, limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, Https2ServerError>;
+
 /** @brief Identifies TLS, HTTP/1.1 or HTTP/2 failure on a negotiated server connection. */
 pub struct HttpsNegotiatedError {
   tls_error: TlsStreamError?;
@@ -61,5 +67,12 @@ pub struct HttpsServer;
 pub static method(HttpsServer) ServeNegotiated(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   http1: ref mut HttpServerHandler, http2: Http2StreamHandler, http1_limits: ref HttpServerLimits,
+  http2_limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, HttpsNegotiatedError>;
+
+/** @brief Negotiate HTTP/1.1 or full-duplex HTTP/2 on an accepted TLS connection. */
+pub static method(HttpsServer) ServeNegotiatedDuplex(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  http1: ref mut HttpServerHandler, http2: Http2DuplexHandler, http1_limits: ref HttpServerLimits,
   http2_limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, HttpsNegotiatedError>;

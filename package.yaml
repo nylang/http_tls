@@ -13,7 +13,7 @@ dependencies:
     rev: a9663c0e254ae700d93d1cc98fcd092fc937b333
   http_server:
     git: https://github.com/nylang/http_server.git
-    rev: e80d109a70b070c98c091022e4b1b7195529f6c4
+    rev: 4cb59da860161d9583d7c693f100d0b23618efac
 directories:
   interface:
     - interface

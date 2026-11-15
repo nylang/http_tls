@@ -24,6 +24,66 @@ pub static method(HttpsServer) ServeNegotiated(
     return HttpsNegotiatedError{http2_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
   }
 
+  var opened = HttpsServer.OpenNegotiatedTransport(connection, config, options);
+  if opened.IsErr() {
+    return opened.get_if<HttpsNegotiatedError>() as HttpsNegotiatedError;
+  }
+
+  var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
+  let protocol = adapter.stream.SelectedAlpn();
+  if protocol.IsErr() {
+    adapter.stream.Close();
+    return HttpsNegotiatedError{tls_error: protocol.get_if<TlsStreamError>()};
+  }
+
+  if (protocol.get_if<string>() as string) == "h2" {
+    let served = Http2Server.ServeStreamingTransport(move(adapter), true, provider_file, move(http2), http2_limits, options);
+    if served.IsErr() {
+      return HttpsNegotiatedError{http2_error: served.get_if<Http2Error>()};
+    }
+
+    return UnitValue();
+  }
+
+  return HttpsServer.ServeHttp1(move(adapter), http1, http1_limits, options);
+}
+
+pub static method(HttpsServer) ServeNegotiatedDuplex(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  http1: ref mut HttpServerHandler, http2: Http2DuplexHandler, http1_limits: ref HttpServerLimits,
+  http2_limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, HttpsNegotiatedError> {
+  if config.alpn.length != 0 || provider_file.length == 0 || !http2_limits.IsValid() {
+    return HttpsNegotiatedError{http2_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
+  }
+
+  var opened = HttpsServer.OpenNegotiatedTransport(connection, config, options);
+  if opened.IsErr() {
+    return opened.get_if<HttpsNegotiatedError>() as HttpsNegotiatedError;
+  }
+
+  var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
+  let protocol = adapter.stream.SelectedAlpn();
+  if protocol.IsErr() {
+    adapter.stream.Close();
+    return HttpsNegotiatedError{tls_error: protocol.get_if<TlsStreamError>()};
+  }
+
+  if (protocol.get_if<string>() as string) == "h2" {
+    let served = Http2Server.ServeDuplexTransport(move(adapter), true, provider_file, move(http2), http2_limits, options);
+    if served.IsErr() {
+      return HttpsNegotiatedError{http2_error: served.get_if<Http2Error>()};
+    }
+
+    return UnitValue();
+  }
+
+  return HttpsServer.ServeHttp1(move(adapter), http1, http1_limits, options);
+}
+
+static method(HttpsServer) OpenNegotiatedTransport(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, options: ref NetOperationOptions
+) -> Result<WebSocketTls, HttpsNegotiatedError> {
   let protocols: <string>[2] = {"h2", "http/1.1"};
   var opened = TlsStream.NewServerWithAlpn(connection, config, protocols);
   if opened.IsErr() {
@@ -37,23 +97,16 @@ pub static method(HttpsServer) ServeNegotiated(
     return HttpsNegotiatedError{tls_error: handshake.get_if<TlsStreamError>()};
   }
 
-  let negotiated = adapter.stream.SelectedAlpn();
-  if negotiated.IsErr() {
-    adapter.stream.Close();
-    return HttpsNegotiatedError{tls_error: negotiated.get_if<TlsStreamError>()};
-  }
+  return move(adapter);
+}
 
-  let protocol = negotiated.get_if<string>() as string;
-  if protocol == "h2" {
-    let served = Http2Server.ServeStreamingTransport(move(adapter), true, provider_file, move(http2), http2_limits, options);
-    if served.IsErr() {
-      return HttpsNegotiatedError{http2_error: served.get_if<Http2Error>()};
-    }
-  } else {
-    let served = HttpServer.ServeTransport(move(adapter), http1, http1_limits, options);
-    if served.IsErr() {
-      return HttpsNegotiatedError{http_error: served.get_if<HttpServerError>()};
-    }
+static method(HttpsServer) ServeHttp1(
+  adapter: WebSocketTls, handler: ref mut HttpServerHandler, limits: ref HttpServerLimits,
+  options: ref NetOperationOptions
+) -> Result<Unit, HttpsNegotiatedError> {
+  let served = HttpServer.ServeTransport(move(adapter), handler, limits, options);
+  if served.IsErr() {
+    return HttpsNegotiatedError{http_error: served.get_if<HttpServerError>()};
   }
 
   return UnitValue();
@@ -125,6 +178,28 @@ pub static method(Http2Server) ServeStreamingSecure(
 
   var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
   let served = Http2Server.ServeStreamingTransport(move(adapter), true, provider_file, move(handler), limits, options);
+  if served.IsErr() {
+    return Https2ServerError{http_error: served.get_if<Http2Error>()};
+  }
+
+  return UnitValue();
+}
+
+pub static method(Http2Server) ServeDuplexSecure(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  handler: Http2DuplexHandler, limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, Https2ServerError> {
+  if (config.alpn.length != 0 && config.alpn != "h2") || !limits.IsValid() || provider_file.length == 0 {
+    return Https2ServerError{http_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
+  }
+
+  var opened = Http2Server.OpenSecureTransport(connection, config, options);
+  if opened.IsErr() {
+    return opened.get_if<Https2ServerError>() as Https2ServerError;
+  }
+
+  var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
+  let served = Http2Server.ServeDuplexTransport(move(adapter), true, provider_file, move(handler), limits, options);
   if served.IsErr() {
     return Https2ServerError{http_error: served.get_if<Http2Error>()};
   }

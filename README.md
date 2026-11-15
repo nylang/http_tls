@@ -350,6 +350,10 @@ supplies the bridge path, HTTP/2 limits and request handler.
 accepts an `Http2StreamHandler` for incremental request and response bodies.
 Use the HTTP/2 bridge built with its streaming entry point.
 
+`Http2Server.ServeDuplexSecure` accepts an `Http2DuplexHandler` and uses
+the bridge's duplex entry point. Use `HttpsServer.ServeNegotiatedDuplex`
+to offer HTTP/1.1 and full-duplex HTTP/2 through the same TLS listener.
+
 `HttpsServer.ServeNegotiated` accepts either HTTP version on the same TCP
 listener. Pass it each accepted socket, PEM identity, HTTP/1.1 handler,
 streaming HTTP/2 handler and bridge path. It performs one TLS handshake with
