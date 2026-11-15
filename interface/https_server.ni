@@ -5,6 +5,8 @@ import "stdlib:stdlib.ny";
 import "net_core:net_core.ny";
 import "tls:tls.ny";
 import "http_server:http_server.ny";
+import "http:http2.ny";
+import "http_server:http2_server.ny";
 
 /** @brief TLS setup, ALPN or HTTP intake failure while opening the exchange. */
 pub struct HttpsServerError {
@@ -21,3 +23,15 @@ pub static method(HttpServerExchange) ReadSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, limits: ref HttpServerLimits,
   options: ref NetOperationOptions, persistent: bool
 ) -> Result<HttpServerExchange, HttpsServerError>;
+
+/** @brief TLS setup, ALPN or HTTP/2 connection failure. */
+pub struct Https2ServerError {
+  tls_error: TlsStreamError?;
+  http_error: Http2Error?;
+}
+
+/** @brief Serve one TLS connection after selecting ALPN h2. */
+pub static method(Http2Server) ServeSecure(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  handler: ref mut Http2ServerHandler, limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, Https2ServerError>;

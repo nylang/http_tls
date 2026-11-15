@@ -341,3 +341,7 @@ The adapter drives the TLS handshake and selects `http/1.1` when ALPN is
 offered, then admits one request. It supports persistent exchanges and
 WebSocket handoff. Responses use explicit framing or a bodyless status.
 Certificate and key files are loaded for each new session.
+
+`Http2Server.ServeSecure` in the same import serves one TLS connection
+with ALPN `h2` using the optional nghttp2 server bridge. The application
+supplies the bridge path, HTTP/2 limits and request handler.
