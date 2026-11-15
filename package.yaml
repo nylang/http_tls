@@ -7,13 +7,13 @@ dependencies:
     rev: 8b7e6a06bf0cfcc772d952cd5a82f4321981edd2
   tls:
     git: https://github.com/nylang/tls.git
-    rev: b7f302c55bbd81f3877d05f90f4461342ece1592
+    rev: a5368c8ca27b4efc0ab84784012dcb9d757764be
   http:
     git: https://github.com/nylang/http.git
     rev: a9663c0e254ae700d93d1cc98fcd092fc937b333
   http_server:
     git: https://github.com/nylang/http_server.git
-    rev: 26ecba83ad589dabe513291422ca56fad1e763ad
+    rev: e80d109a70b070c98c091022e4b1b7195529f6c4
 directories:
   interface:
     - interface

@@ -349,3 +349,10 @@ supplies the bridge path, HTTP/2 limits and request handler.
 `Http2Server.ServeStreamingSecure` selects the same `h2` ALPN protocol and
 accepts an `Http2StreamHandler` for incremental request and response bodies.
 Use the HTTP/2 bridge built with its streaming entry point.
+
+`HttpsServer.ServeNegotiated` accepts either HTTP version on the same TCP
+listener. Pass it each accepted socket, PEM identity, HTTP/1.1 handler,
+streaming HTTP/2 handler and bridge path. It performs one TLS handshake with
+server preference `h2`, then `http/1.1`. A client with no ALPN offer uses
+HTTP/1.1. A client offering only unsupported protocols gets a TLS alert.
+The method consumes the HTTP/2 handler and uses one deadline for the connection.

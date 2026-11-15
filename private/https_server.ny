@@ -12,6 +12,53 @@ import "http_server:http2_server.ny";
 import "interface/https_server.ni";
 import "private/websocket_tls.ny";
 
+/** @brief Dispatches an accepted TLS connection to its negotiated HTTP protocol. */
+pub struct HttpsServer {}
+
+pub static method(HttpsServer) ServeNegotiated(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  http1: ref mut HttpServerHandler, http2: Http2StreamHandler, http1_limits: ref HttpServerLimits,
+  http2_limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, HttpsNegotiatedError> {
+  if config.alpn.length != 0 || provider_file.length == 0 || !http2_limits.IsValid() {
+    return HttpsNegotiatedError{http2_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
+  }
+
+  let protocols: <string>[2] = {"h2", "http/1.1"};
+  var opened = TlsStream.NewServerWithAlpn(connection, config, protocols);
+  if opened.IsErr() {
+    return HttpsNegotiatedError{tls_error: opened.get_if<TlsStreamError>()};
+  }
+
+  var adapter = WebSocketTls{stream: move(opened.get_if<TlsStream>() as TlsStream)};
+  let handshake = adapter.Drive(adapter.stream.HandshakeAsync(options));
+  if handshake.IsErr() {
+    adapter.stream.Close();
+    return HttpsNegotiatedError{tls_error: handshake.get_if<TlsStreamError>()};
+  }
+
+  let negotiated = adapter.stream.SelectedAlpn();
+  if negotiated.IsErr() {
+    adapter.stream.Close();
+    return HttpsNegotiatedError{tls_error: negotiated.get_if<TlsStreamError>()};
+  }
+
+  let protocol = negotiated.get_if<string>() as string;
+  if protocol == "h2" {
+    let served = Http2Server.ServeStreamingTransport(move(adapter), true, provider_file, move(http2), http2_limits, options);
+    if served.IsErr() {
+      return HttpsNegotiatedError{http2_error: served.get_if<Http2Error>()};
+    }
+  } else {
+    let served = HttpServer.ServeTransport(move(adapter), http1, http1_limits, options);
+    if served.IsErr() {
+      return HttpsNegotiatedError{http_error: served.get_if<HttpServerError>()};
+    }
+  }
+
+  return UnitValue();
+}
+
 pub static method(HttpServerExchange) ReadSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, limits: ref HttpServerLimits,
   options: ref NetOperationOptions, persistent: bool
