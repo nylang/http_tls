@@ -345,3 +345,7 @@ Certificate and key files are loaded for each new session.
 `Http2Server.ServeSecure` in the same import serves one TLS connection
 with ALPN `h2` using the optional nghttp2 server bridge. The application
 supplies the bridge path, HTTP/2 limits and request handler.
+
+`Http2Server.ServeStreamingSecure` selects the same `h2` ALPN protocol and
+accepts an `Http2StreamHandler` for incremental request and response bodies.
+Use the HTTP/2 bridge built with its streaming entry point.

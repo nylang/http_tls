@@ -35,3 +35,10 @@ pub static method(Http2Server) ServeSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: ref mut Http2ServerHandler, limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, Https2ServerError>;
+
+/** @brief Stream HTTP/2 on one TLS connection after selecting ALPN h2.
+ * @note Takes the handler and uses the streaming provider entry point. */
+pub static method(Http2Server) ServeStreamingSecure(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  handler: Http2StreamHandler, limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, Https2ServerError>;

@@ -49,6 +49,45 @@ pub static method(Http2Server) ServeSecure(
     return Https2ServerError{http_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
   }
 
+  var opened = Http2Server.OpenSecureTransport(connection, config, options);
+  if opened.IsErr() {
+    return opened.get_if<Https2ServerError>() as Https2ServerError;
+  }
+
+  var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
+  let served = Http2Server.ServeTransport(move(adapter), true, provider_file, handler, limits, options);
+  if served.IsErr() {
+    return Https2ServerError{http_error: served.get_if<Http2Error>()};
+  }
+
+  return UnitValue();
+}
+
+pub static method(Http2Server) ServeStreamingSecure(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
+  handler: Http2StreamHandler, limits: ref Http2Limits, options: ref NetOperationOptions
+) -> Result<Unit, Https2ServerError> {
+  if (config.alpn.length != 0 && config.alpn != "h2") || !limits.IsValid() || provider_file.length == 0 {
+    return Https2ServerError{http_error: Http2Error{kind: Http2ErrorKind.InvalidArgument}};
+  }
+
+  var opened = Http2Server.OpenSecureTransport(connection, config, options);
+  if opened.IsErr() {
+    return opened.get_if<Https2ServerError>() as Https2ServerError;
+  }
+
+  var adapter = move(opened.get_if<WebSocketTls>() as WebSocketTls);
+  let served = Http2Server.ServeStreamingTransport(move(adapter), true, provider_file, move(handler), limits, options);
+  if served.IsErr() {
+    return Https2ServerError{http_error: served.get_if<Http2Error>()};
+  }
+
+  return UnitValue();
+}
+
+static method(Http2Server) OpenSecureTransport(
+  connection: ref mut TcpConnection, config: ref TlsServerConfig, options: ref NetOperationOptions
+) -> Result<WebSocketTls, Https2ServerError> {
   var identity = config;
   identity.alpn = "h2";
   var opened = TlsStream.NewServer(connection, identity);
@@ -72,10 +111,5 @@ pub static method(Http2Server) ServeSecure(
     return Https2ServerError{http_error: Http2Error{kind: Http2ErrorKind.Negotiation}};
   }
 
-  let served = Http2Server.ServeTransport(move(adapter), true, provider_file, handler, limits, options);
-  if served.IsErr() {
-    return Https2ServerError{http_error: served.get_if<Http2Error>()};
-  }
-
-  return UnitValue();
+  return move(adapter);
 }
