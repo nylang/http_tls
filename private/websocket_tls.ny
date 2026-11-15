@@ -9,11 +9,11 @@ import "tls:tls.ny";
 import "http:http.ny";
 import "interface/websocket_tls.ni";
 
-struct WebSocketTls implements WebSocketTransport {
+pub struct WebSocketTls implements WebSocketTransport {
   stream: TlsStream;
 }
 
-method(WebSocketTls) Drive(
+pub method(WebSocketTls) Drive(
   queued: Result<AsyncFuture<TlsTransfer>, TlsStreamError>
 ) -> Result<TlsTransfer, TlsStreamError> {
   if queued.IsErr() {

@@ -332,3 +332,12 @@ bridge built using the HTTP package instructions. The URL supplies the
 certificate identity. The handshake must select ALPN `h2` before any
 HTTP/2 bytes are written. Use the regular net_core and TLS link inputs
 and the shared `Submit` and `Receive` operations after open.
+
+## HTTPS server
+
+Import `http_tls:https_server.ny` and call
+`HttpServerExchange.ReadSecure` with accepted TCP and PEM credentials.
+The adapter drives the TLS handshake and selects `http/1.1` when ALPN is
+offered, then admits one request. It supports persistent exchanges and
+WebSocket handoff. Responses use explicit framing or a bodyless status.
+Certificate and key files are loaded for each new session.
