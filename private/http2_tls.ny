@@ -96,6 +96,9 @@ method(Http2Tls) Abort() -> void {
   self.stream.Close();
 }
 
+/** @brief Dial TLS with HTTP/2 ALPN and adopt the negotiated connection.
+ * @returns An owned HTTP/2 client or an argument, network, TLS, ALPN or provider error.
+ */
 pub static method(Http2Client) OpenSecure(
   url: ref HttpUrl, ca_file: ref string, provider_file: ref string, resolver: ref mut AsyncResolver,
   dial: ref HttpDialOptions, limits: ref Http2Limits, options: ref NetOperationOptions

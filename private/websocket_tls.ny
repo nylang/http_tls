@@ -9,10 +9,15 @@ import "tls:tls.ny";
 import "http:http.ny";
 import "interface/websocket_tls.ni";
 
+/** @brief TLS transport adapter that drives one operation on the caller thread.
+ */
 pub struct WebSocketTls implements WebSocketTransport {
   stream: TlsStream;
 }
 
+/** @brief Drive a TLS Future to completion on the caller thread.
+ * @returns The completed transfer or the immediate/completion TLS or transport error.
+ */
 pub method(WebSocketTls) Drive(
   queued: Result<AsyncFuture<TlsTransfer>, TlsStreamError>
 ) -> Result<TlsTransfer, TlsStreamError> {
@@ -95,6 +100,9 @@ method(WebSocketTls) Abort() -> void {
   self.stream.Close();
 }
 
+/** @brief Dial a verified TLS connection and perform the WebSocket upgrade.
+ * @returns An owned session or a URL, network, TLS or opening-handshake error.
+ */
 pub static method(WebSocket) OpenSecure(
   url: ref string, ca_file: ref string, resolver: ref mut AsyncResolver,
   dial: ref HttpDialOptions, limits: ref WebSocketLimits, options: ref NetOperationOptions

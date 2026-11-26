@@ -18,7 +18,9 @@ pub struct HttpsServerError {
  * @note The PEM configuration must offer either an empty ALPN value or http/1.1.
  * This entry selects http/1.1 when the client offers ALPN. Responses must
  * have explicit framing or be bodyless. After TLS takes ownership, any
- * failure closes the connection. */
+ * failure closes the connection.
+ * @returns An owned exchange or a TLS, transport, protocol or resource-limit error.
+ */
 pub static method(HttpServerExchange) ReadSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, limits: ref HttpServerLimits,
   options: ref NetOperationOptions, persistent: bool
@@ -30,20 +32,26 @@ pub struct Https2ServerError {
   http_error: Http2Error?;
 }
 
-/** @brief Serve one TLS connection after selecting ALPN h2. */
+/** @brief Serve one TLS connection after selecting ALPN h2.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: ref mut Http2ServerHandler, limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, Https2ServerError>;
 
 /** @brief Stream HTTP/2 on one TLS connection after selecting ALPN h2.
- * @note Takes the handler and uses the streaming provider entry point. */
+ * @note Takes the handler and uses the streaming provider entry point.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeStreamingSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: Http2StreamHandler, limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, Https2ServerError>;
 
-/** @brief Serve full-duplex HTTP/2 after selecting ALPN h2. */
+/** @brief Serve full-duplex HTTP/2 after selecting ALPN h2.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeDuplexSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: Http2DuplexHandler, limits: ref Http2Limits, options: ref NetOperationOptions
@@ -63,14 +71,18 @@ pub struct HttpsServer;
  * @note Prefers h2, then http/1.1. Clients without ALPN use HTTP/1.1.
  * Clients offering only other protocols fail the handshake. Supply an empty
  * config.alpn and the streaming HTTP/2 provider path. The HTTP/2 handler is
- * consumed, and the supplied controls cover the entire connection. */
+ * consumed, and the supplied controls cover the entire connection.
+ * @returns Success when serving completes, or a TLS, negotiation, protocol or handler error.
+ */
 pub static method(HttpsServer) ServeNegotiated(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   http1: ref mut HttpServerHandler, http2: Http2StreamHandler, http1_limits: ref HttpServerLimits,
   http2_limits: ref Http2Limits, options: ref NetOperationOptions
 ) -> Result<Unit, HttpsNegotiatedError>;
 
-/** @brief Negotiate HTTP/1.1 or full-duplex HTTP/2 on an accepted TLS connection. */
+/** @brief Negotiate HTTP/1.1 or full-duplex HTTP/2 on an accepted TLS connection.
+ * @returns Success when serving completes, or a TLS, negotiation, protocol or handler error.
+ */
 pub static method(HttpsServer) ServeNegotiatedDuplex(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   http1: ref mut HttpServerHandler, http2: Http2DuplexHandler, http1_limits: ref HttpServerLimits,

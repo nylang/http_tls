@@ -17,7 +17,9 @@ pub struct SecureHttp2Error {
  * @param ca_file Required PEM trust file. The URL determines the verified identity.
  * @param provider_file Trusted path to the native HTTP/2 bridge shared library.
  * @note Use the same deadline and token for subsequent Receive calls if the
- * entire exchange must share one control budget. */
+ * entire exchange must share one control budget.
+ * @returns An owned HTTP/2 client or an argument, network, TLS, ALPN or provider error.
+ */
 pub static method(Http2Client) OpenSecure(
   url: ref HttpUrl, ca_file: ref string, provider_file: ref string, resolver: ref mut AsyncResolver,
   dial: ref HttpDialOptions, limits: ref Http2Limits, options: ref NetOperationOptions

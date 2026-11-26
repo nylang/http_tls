@@ -15,6 +15,9 @@ import "private/websocket_tls.ny";
 /** @brief Dispatches an accepted TLS connection to its negotiated HTTP protocol. */
 pub struct HttpsServer {}
 
+/** @brief Negotiate TLS ALPN and dispatch HTTP/1 or streaming HTTP/2.
+ * @returns Success when serving completes, or a TLS, negotiation, protocol or handler error.
+ */
 pub static method(HttpsServer) ServeNegotiated(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   http1: ref mut HttpServerHandler, http2: Http2StreamHandler, http1_limits: ref HttpServerLimits,
@@ -48,6 +51,9 @@ pub static method(HttpsServer) ServeNegotiated(
   return HttpsServer.ServeHttp1(move(adapter), http1, http1_limits, options);
 }
 
+/** @brief Negotiate TLS ALPN and dispatch HTTP/1 or duplex HTTP/2.
+ * @returns Success when serving completes, or a TLS, negotiation, protocol or handler error.
+ */
 pub static method(HttpsServer) ServeNegotiatedDuplex(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   http1: ref mut HttpServerHandler, http2: Http2DuplexHandler, http1_limits: ref HttpServerLimits,
@@ -112,6 +118,9 @@ static method(HttpsServer) ServeHttp1(
   return UnitValue();
 }
 
+/** @brief Read an HTTP/1 exchange through an accepted TLS connection.
+ * @returns An owned exchange or a TLS, transport, protocol or resource-limit error.
+ */
 pub static method(HttpServerExchange) ReadSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, limits: ref HttpServerLimits,
   options: ref NetOperationOptions, persistent: bool
@@ -141,6 +150,9 @@ pub static method(HttpServerExchange) ReadSecure(
   return move(exchange.get_if<HttpServerExchange>() as HttpServerExchange);
 }
 
+/** @brief Serve an accepted TLS connection with the HTTP/2 handler.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: ref mut Http2ServerHandler, limits: ref Http2Limits, options: ref NetOperationOptions
@@ -163,6 +175,9 @@ pub static method(Http2Server) ServeSecure(
   return UnitValue();
 }
 
+/** @brief Serve HTTP/2 over TLS with a streaming handler.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeStreamingSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: Http2StreamHandler, limits: ref Http2Limits, options: ref NetOperationOptions
@@ -185,6 +200,9 @@ pub static method(Http2Server) ServeStreamingSecure(
   return UnitValue();
 }
 
+/** @brief Serve HTTP/2 over TLS with a duplex streaming handler.
+ * @returns Success when serving completes, or a TLS, ALPN, protocol or handler error.
+ */
 pub static method(Http2Server) ServeDuplexSecure(
   connection: ref mut TcpConnection, config: ref TlsServerConfig, provider_file: ref string,
   handler: Http2DuplexHandler, limits: ref Http2Limits, options: ref NetOperationOptions
